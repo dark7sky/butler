@@ -10,7 +10,8 @@ backend/.env.*
 *.key
 *.p12
 *.pfx
-
+docs/
+scripts/
 # Python
 __pycache__/
 *.py[cod]
