@@ -240,10 +240,13 @@ async def get_all_accounts(
         special_tables = [t for t in account_tables if not t.isnumeric()]
 
         acc_list = []
+        seen_accounts = set()
         
         # Add normal accounts
         for acc in accounts_info:
             acc_num = acc[0]
+            if acc_num in seen_accounts:
+                continue
             # Get latest balance only if table exists
             latest_bal = None
             today_diff = 0.0
@@ -258,9 +261,12 @@ async def get_all_accounts(
                 "latest_balance": float(latest_bal) if latest_bal is not None else 0.0,
                 "today_diff": float(today_diff)
             })
+            seen_accounts.add(acc_num)
             
         # Add special tables
         for tab in sorted(special_tables):
+            if tab in seen_accounts:
+                continue
             latest_bal, today_diff = fetch_latest_and_today_diff(tab)
             acc_list.append({
                 "account_number": tab,
@@ -271,6 +277,7 @@ async def get_all_accounts(
                 "latest_balance": float(latest_bal) if latest_bal is not None else 0.0,
                 "today_diff": float(today_diff)
             })
+            seen_accounts.add(tab)
 
         _ACCOUNTS_CACHE["ts"] = time.monotonic()
         _ACCOUNTS_CACHE["data"] = acc_list
