@@ -1,0 +1,73 @@
+name: Build Android Release
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "ta_watchdog/**"
+      - ".github/workflows/flutter-android-release.yml"
+  workflow_dispatch:
+
+jobs:
+  android-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    defaults:
+      run:
+        working-directory: ta_watchdog
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Prepare signing files
+        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
+          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Build release AAB
+        run: flutter build appbundle --release --build-number=${{ github.run_number }} --dart-define=API_BASE_URL=${{ vars.API_BASE_URL }}
+
+      - name: Build release APK
+        run: flutter build apk --release --build-number=${{ github.run_number }} --dart-define=API_BASE_URL=${{ vars.API_BASE_URL }}
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-${{ github.run_number }}
+          path: |
+            ta_watchdog/build/app/outputs/bundle/release/app-release.aab
+            ta_watchdog/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload to Google Play (internal)
+        if: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON != '' && vars.PLAY_PACKAGE_NAME != '' && secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: ${{ vars.PLAY_PACKAGE_NAME }}
+          releaseFiles: ta_watchdog/build/app/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed

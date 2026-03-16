@@ -1,17 +1,33 @@
-# ta_watchdog
+# TA Watchdog (Flutter)
 
-A new Flutter project.
+## Local Development
 
-## Getting Started
+```bash
+flutter pub get
+flutter run --dart-define=API_BASE_URL=http://<server-host>:8921
+```
 
-This project is a starting point for a Flutter application.
+## Android Release CI/CD
 
-A few resources to get you started if this is your first Flutter project:
+GitHub Actions workflow:
+- `.github/workflows/flutter-android-release.yml`
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+On push to `main` (when `ta_watchdog/**` changes), the workflow:
+1. builds release `AAB` and `APK`
+2. uploads artifacts to the workflow run
+3. optionally uploads `AAB` to Google Play Internal track
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## GitHub Settings Required
+
+Repository Variables:
+- `API_BASE_URL` (example: `https://api.yourdomain.com`)
+- `PLAY_PACKAGE_NAME` (example: `com.yourcompany.ta_watchdog`)
+
+Repository Secrets:
+- `ANDROID_KEYSTORE_BASE64` (base64-encoded upload keystore file)
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+- `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` (service account JSON text for Play Console API)
+
+If `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` is not set, CI still builds artifacts but skips Play upload.
