@@ -1,0 +1,64 @@
+# Secrets / local env
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+/legacy/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+venv_packageCheck/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+
+# Build / dist
+dist/
+build/
+
+# Logs and runtime artifacts
+*.log
+*.out
+*.err
+logs/
+
+# IDE / OS
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Local app data
+.appdata/
+
+# Flutter generated artifacts
+ta_watchdog/.dart_tool/
+ta_watchdog/build/
+ta_watchdog/.flutter-plugins
+ta_watchdog/.flutter-plugins-dependencies
+ta_watchdog/.packages
+ta_watchdog/android/.gradle/
+ta_watchdog/android/local.properties
+ta_watchdog/ios/Flutter/ephemeral/
+ta_watchdog/ios/Pods/
+ta_watchdog/macos/Flutter/ephemeral/
+ta_watchdog/macos/Pods/
+ta_watchdog/linux/flutter/ephemeral/
+ta_watchdog/windows/flutter/ephemeral/

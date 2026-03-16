@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  api:
+    networks:
+      - postgres_default
+
+networks:
+  postgres_default:
+    external: true
