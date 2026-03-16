@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "330031411532",
+    "project_id": "butler-2e9ad",
+    "storage_bucket": "butler-2e9ad.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:330031411532:android:0a959227e1fd700d8b9fe9",
+        "android_client_info": {
+          "package_name": "com.example.ta_watchdog"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBsZoH-W2tV4EK1ftkRQm8NiUDCBZvfFag"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
