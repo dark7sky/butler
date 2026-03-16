@@ -5,7 +5,7 @@ services:
     # build:
     #   context: .
     #   dockerfile: Dockerfile
-    image: ghcr.io/ysyoo/ta_watchdog_api:latest
+    image: ghcr.io/dark7sky/ta_watchdog_api:latest
     container_name: ta_watchdog_api
     restart: always
     ports:
