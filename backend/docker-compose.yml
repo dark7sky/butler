@@ -9,8 +9,8 @@ services:
     restart: always
     ports:
       - "8921:8921"
-    env_file:
-      - .env
+    # env_file:
+    #   - .env
     # Allow container to access host network to reach external PostgreSQL
     # If using Docker Desktop for Windows/Mac: host.docker.internal works out of the box
     # For Linux, this maps the host IP to host.docker.internal
