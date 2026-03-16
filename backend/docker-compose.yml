@@ -8,8 +8,14 @@ services:
     restart: always
     ports:
       - "8921:8921"
-    env_file:
-      - .env
+    # Portainer stack env vars (or local shell/.env at compose-parse time)
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      SECRET_KEY: ${SECRET_KEY}
+      MASTER_PASSWORD: ${MASTER_PASSWORD}
+      KEY_OPENAI: ${KEY_OPENAI:-}
+      ACCOUNT_IGNORE_TABLES: ${ACCOUNT_IGNORE_TABLES:-}
+      ACCOUNT_TABLE_CACHE_TTL_SECONDS: ${ACCOUNT_TABLE_CACHE_TTL_SECONDS:-30}
     # Allow container to access host network to reach external PostgreSQL
     # If using Docker Desktop for Windows/Mac: host.docker.internal works out of the box
     # For Linux, this maps the host IP to host.docker.internal
