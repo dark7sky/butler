@@ -21,6 +21,8 @@ services:
     # For Linux, this maps the host IP to host.docker.internal
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - postgres_default
     volumes:
       # Optional: Mount the backend directory for local development (hot-reload)
       # - ./:/app
@@ -28,3 +30,7 @@ services:
 
 volumes:
   api_data:
+
+networks:
+  postgres_default:
+    external: true
