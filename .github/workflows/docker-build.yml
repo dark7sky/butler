@@ -1,0 +1,33 @@
+name: Build and Push to GHCR
+
+on:
+  push:
+    branches: [ "main" ] # 사용하는 브랜치 이름(main 또는 master)에 맞게 수정
+    paths:
+      - 'backend/**'     # backend 폴더 내용이 바뀔 때만 빌드 실행
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write    # GHCR에 이미지를 업로드하기 위한 권한
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 본인의 실제 GitHub 계정명(소문자)으로 적어주세요!
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./backend
+          push: true
+          tags: ghcr.io/dark7sky/ta_watchdog_api:latest
