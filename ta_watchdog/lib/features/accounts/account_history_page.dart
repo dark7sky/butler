@@ -159,7 +159,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     final latestBalance = _asDouble(latest['balance']);
     final delta = _groupByDay
         ? _calculateMonthlyChange(history)
-        : listTodayDiff ?? _calculateTodayChange(history);
+        : _calculateTodayChange(history) ?? listTodayDiff;
     final deltaColor = (delta ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
     final deltaText = delta == null
         ? '--'
@@ -320,19 +320,23 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     if (history.isEmpty) return null;
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
-    double? todayLast;
-    double? yesterdayLast;
+    double? todayLatest;
+    double? todayEarliest;
+
     for (final entry in history) {
       final date = _parseDate(entry['date']?.toString() ?? '');
       final balance = _asDouble(entry['balance']);
+
       if (date.isBefore(todayStart)) {
-        yesterdayLast = balance;
         break;
       }
-      todayLast ??= balance;
+
+      todayLatest ??= balance;
+      todayEarliest = balance;
     }
-    if (todayLast == null || yesterdayLast == null) return null;
-    return todayLast - yesterdayLast;
+
+    if (todayLatest == null || todayEarliest == null) return null;
+    return todayLatest - todayEarliest;
   }
 
   double? _calculateMonthlyChange(List<dynamic> history) {
