@@ -48,3 +48,7 @@ app.*.map.json
 /android/key.properties
 /android/**/*.jks
 /android/**/*.keystore
+
+# Firebase / Google service credentials (must be supplied locally)
+/android/app/google-services.json
+/ios/Runner/GoogleService-Info.plist

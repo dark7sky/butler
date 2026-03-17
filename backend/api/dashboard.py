@@ -1,12 +1,7 @@
-import io
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict
 
-import matplotlib
-import matplotlib.dates as mdates
-import matplotlib.pyplot as plt
-import pandas as pd
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -15,16 +10,13 @@ from api.deps import get_current_user, get_db
 from db.utils import (
     account_exists,
     fetch_account_snapshot_rows,
-    fetch_summary_rows,
-    list_accounts,
+    get_app_timezone,
     local_day_start,
     local_month_start,
     now_local,
     serialize_timestamp,
     to_utc,
 )
-
-matplotlib.use("Agg")
 
 router = APIRouter()
 
@@ -57,6 +49,38 @@ def _build_account_payload(rows: list[dict]) -> list[dict]:
             }
         )
     return payload
+
+
+def _parse_request_datetime(value: str | None, default: datetime) -> datetime:
+    if not value:
+        return default
+
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=get_app_timezone())
+    return parsed.astimezone(get_app_timezone())
+
+
+def _group_balance_rows(rows: list[tuple], chart_type: str) -> list[dict[str, float | str]]:
+    grouped: dict[datetime, float] = {}
+    timezone = get_app_timezone()
+
+    for recorded_at, balance in rows:
+        local_stamp = recorded_at.astimezone(timezone) if recorded_at.tzinfo else recorded_at.replace(tzinfo=timezone)
+        if chart_type == "day":
+            bucket = local_stamp.replace(minute=0, second=0, microsecond=0)
+        else:
+            bucket = local_stamp.replace(hour=0, minute=0, second=0, microsecond=0)
+        grouped[bucket] = float(balance)
+
+    data: list[dict[str, float | str]] = []
+    previous: float | None = None
+    for bucket in sorted(grouped):
+        current = grouped[bucket]
+        diff = 0.0 if previous is None else current - previous
+        data.append({"date": bucket.isoformat(sep=" "), "balance": diff})
+        previous = current
+    return data
 
 
 @router.get("/summary")
@@ -200,45 +224,73 @@ async def get_dashboard_summary(
     }
 
 
-def make_plot(data: pd.DataFrame, title: str, fmt: str, xlims: list | None = None) -> io.BytesIO:
-    fig, ax = plt.subplots(figsize=(5, 11))
-    ax.plot(data["date"], data["balance"], "ko-")
-    plt.title(title)
-    if xlims is not None:
-        plt.xlim(xlims[0], xlims[1])
-    plt.grid(True)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter(fmt))
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format="png")
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
-
 @router.get("/chart_native")
 async def get_dashboard_chart_data(
     chart_type: str = "day",
+    start_at: str | None = None,
+    end_at: str | None = None,
+    diff_mode: bool = False,
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     try:
-        summary_name = "accounts_balance"
-        limit = 100
-        if chart_type == "day":
-            summary_name = "accounts_balance"
-            limit = 100
-        elif chart_type == "month":
-            summary_name = "accounts_balance"
-            limit = 2000
-        elif chart_type == "year":
-            summary_name = "accounts_monthdiff"
-            limit = 12
-        else:
+        end_local = _parse_request_datetime(end_at, now_local())
+        default_start = end_local - timedelta(hours=24)
+        start_local = _parse_request_datetime(start_at, default_start)
+        if start_local > end_local:
+            start_local, end_local = end_local, start_local
+
+        if diff_mode and chart_type == "year":
+            rows = db.execute(
+                text(
+                    """
+                    SELECT balance_date, balance
+                    FROM portfolio_monthdiff
+                    WHERE balance_date BETWEEN :start_date AND :end_date
+                    ORDER BY balance_date ASC
+                    """
+                ),
+                {
+                    "start_date": start_local.date(),
+                    "end_date": end_local.date(),
+                },
+            ).fetchall()
+            data = [
+                {"date": row[0].isoformat(), "balance": float(row[1])}
+                for row in rows
+            ]
+            return {"status": "success", "data": data}
+
+        start_utc = to_utc(start_local)
+        end_utc = to_utc(end_local)
+        rows = db.execute(
+            text(
+                """
+                SELECT recorded_at, balance
+                FROM portfolio_balance_history
+                WHERE recorded_at BETWEEN :start_at AND :end_at
+                ORDER BY recorded_at ASC
+                """
+            ),
+            {
+                "start_at": start_utc,
+                "end_at": end_utc,
+            },
+        ).fetchall()
+
+        if diff_mode:
+            if chart_type not in {"day", "month"}:
+                return {"status": "error", "message": "Invalid chart_type"}
+            return {"status": "success", "data": _group_balance_rows(rows, chart_type)}
+
+        if chart_type not in {"day", "month", "year"}:
             return {"status": "error", "message": "Invalid chart_type"}
 
-        data = fetch_summary_rows(db, summary_name, limit)
-        return {"status": "success", "data": list(reversed(data))}
+        data = [
+            {"date": serialize_timestamp(row[0]), "balance": float(row[1])}
+            for row in rows
+        ]
+        return {"status": "success", "data": data}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
 

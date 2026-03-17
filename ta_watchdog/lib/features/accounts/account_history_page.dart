@@ -30,6 +30,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final accountsAsync = ref.watch(accountsProvider);
     final historyAsync = ref.watch(
       accountHistoryProvider(
         AccountHistoryRequest(accountNumber: widget.accountNumber, limit: _limit),
@@ -76,7 +77,11 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _buildSummaryCard(history, displayHistory),
+                _buildSummaryCard(
+                  history,
+                  displayHistory,
+                  _findListTodayDiff(accountsAsync.value),
+                ),
                 const SizedBox(height: 12),
                 _buildControls(),
                 const SizedBox(height: 12),
@@ -147,13 +152,14 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   Widget _buildSummaryCard(
     List<dynamic> history,
     List<dynamic> displayHistory,
+    double? listTodayDiff,
   ) {
     final latest = displayHistory.first;
     final latestDate = _parseDate(latest['date']?.toString() ?? '');
     final latestBalance = _asDouble(latest['balance']);
     final delta = _groupByDay
         ? _calculateMonthlyChange(history)
-        : _calculateTodayChange(history);
+        : _calculateTodayChange(history) ?? listTodayDiff;
     final deltaColor = (delta ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
     final deltaText = delta == null
         ? '--'
@@ -218,6 +224,31 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     );
   }
 
+  double? _findListTodayDiff(List<dynamic>? accounts) {
+    if (accounts == null || accounts.isEmpty) return null;
+
+    final target = _accountMatchKey(widget.accountNumber);
+    if (target.isEmpty) return null;
+
+    for (final account in accounts) {
+      final number = _accountMatchKey(account['account_number']?.toString());
+      if (number == target) {
+        return _asNullableDouble(account['today_diff']);
+      }
+    }
+    return null;
+  }
+
+  String _accountMatchKey(String? value) {
+    final raw = (value ?? '').trim();
+    if (raw.isEmpty) return '';
+
+    final digits = raw.replaceAll(RegExp(r'\D'), '');
+    if (digits.isNotEmpty) return digits;
+
+    return raw.toLowerCase();
+  }
+
   Widget _buildHistoryRow(DateTime date, double balance, double? diff) {
     final diffColor = (diff ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
     final diffText = diff == null
@@ -266,8 +297,13 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   }
 
   double _asDouble(dynamic value) {
+    return _asNullableDouble(value) ?? 0.0;
+  }
+
+  double? _asNullableDouble(dynamic value) {
+    if (value == null) return null;
     if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+    return double.tryParse(value.toString());
   }
 
   DateTime _parseDate(String input) {
@@ -284,19 +320,23 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     if (history.isEmpty) return null;
     final now = DateTime.now();
     final todayStart = DateTime(now.year, now.month, now.day);
-    double? todayLast;
-    double? yesterdayLast;
+    double? todayLatest;
+    double? todayEarliest;
+
     for (final entry in history) {
       final date = _parseDate(entry['date']?.toString() ?? '');
       final balance = _asDouble(entry['balance']);
+
       if (date.isBefore(todayStart)) {
-        yesterdayLast = balance;
         break;
       }
-      todayLast ??= balance;
+
+      todayLatest ??= balance;
+      todayEarliest = balance;
     }
-    if (todayLast == null || yesterdayLast == null) return null;
-    return todayLast - yesterdayLast;
+
+    if (todayLatest == null || todayEarliest == null) return null;
+    return todayLatest - todayEarliest;
   }
 
   double? _calculateMonthlyChange(List<dynamic> history) {
