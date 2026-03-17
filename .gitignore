@@ -12,6 +12,8 @@ backend/.env.*
 *.pfx
 docs/
 scripts/
+!backend/scripts/
+!backend/scripts/*.py
 # Python
 __pycache__/
 *.py[cod]

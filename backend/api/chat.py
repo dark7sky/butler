@@ -1,26 +1,34 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import text
-from pydantic import BaseModel
 import json
 import logging
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
 
-from core.config import settings
 from api.deps import get_current_user, get_db
-from db.utils import list_account_tables
+from core.config import settings
+from db.utils import account_exists, fetch_summary_rows, list_accounts, serialize_timestamp
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+
 class ChatRequest(BaseModel):
     query: str
 
-_SUMMARY_TABLES = {"accounts_balance", "accounts_daydiff", "accounts_monthdiff", "accounts_diff"}
+
+_SUMMARY_TABLES = (
+    "accounts_balance",
+    "accounts_daydiff",
+    "accounts_monthdiff",
+    "accounts_diff",
+)
 
 ASK_TOOLS = [
     {
@@ -28,8 +36,8 @@ ASK_TOOLS = [
         "function": {
             "name": "get_account_list",
             "description": (
-                "accounts_info 테이블을 조회하여 모든 계좌 목록(계좌번호, 회사, 유형, 이름, 메모)을 반환한다. "
-                "또한 toss, 지역화폐 등 특수 테이블 목록도 함께 반환한다."
+                "Return all accounts from the normalized accounts table. "
+                "Include metadata and the list of special account keys."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -39,14 +47,20 @@ ASK_TOOLS = [
         "function": {
             "name": "get_account_history",
             "description": (
-                "특정 계좌(account_number) 또는 특수 테이블(toss 등)의 잔액 이력을 조회한다. "
-                "열: date, balance."
+                "Return recent history for one account key. "
+                "The result contains date and balance fields."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "table_name": {"type": "string", "description": "조회할 테이블명 (계좌번호 또는 특수 테이블명)"},
-                    "limit":      {"type": "integer", "description": "조회 건수 (기본 30)"},
+                    "table_name": {
+                        "type": "string",
+                        "description": "Account key to inspect.",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum row count, default 30.",
+                    },
                 },
                 "required": ["table_name"],
             },
@@ -57,21 +71,22 @@ ASK_TOOLS = [
         "function": {
             "name": "get_summary_table",
             "description": (
-                "요약 테이블을 조회한다.\n"
-                "- accounts_balance: 전체 잔액 합계 (date, balance)\n"
-                "- accounts_daydiff: 일별 변동 (date, balance)\n"
-                "- accounts_monthdiff: 월별 변동 (date, balance)\n"
-                "- accounts_diff: 각 시점별 raw 변동 (date, balance)"
+                "Return normalized portfolio summary rows. "
+                "Supported names are accounts_balance, accounts_daydiff, "
+                "accounts_monthdiff, and accounts_diff."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "table_name": {
                         "type": "string",
-                        "enum": ["accounts_balance", "accounts_daydiff", "accounts_monthdiff", "accounts_diff"],
-                        "description": "조회할 요약 테이블",
+                        "enum": list(_SUMMARY_TABLES),
+                        "description": "Summary table alias.",
                     },
-                    "limit": {"type": "integer", "description": "조회 건수 (기본 30)"},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum row count, default 30.",
+                    },
                 },
                 "required": ["table_name"],
             },
@@ -79,54 +94,80 @@ ASK_TOOLS = [
     },
 ]
 
+
 def execute_ask_tool(db: Session, tool_name: str, args: dict) -> str:
-    """GPT Function Calling 요청을 실행하여 결과를 문자열로 반환."""
     try:
         if tool_name == "get_account_list":
-            accounts_res = db.execute(text("SELECT account_number, company, type, name, memo FROM accounts_info")).fetchall()
-            accounts = [dict(r._mapping) for r in accounts_res]
-            
-            special = [t for t in list_account_tables(db) if not t.isnumeric()]
-            return json.dumps({"accounts": accounts, "special_tables": special}, ensure_ascii=False, default=str)
+            accounts = []
+            special_tables = []
+            for row in list_accounts(db):
+                item = {
+                    "account_number": row["account_key"],
+                    "company": row["company"],
+                    "type": row["type"],
+                    "name": row["name"],
+                    "memo": row["memo"],
+                    "is_special": bool(row["is_special"]),
+                    "is_active": bool(row["is_active"]),
+                }
+                accounts.append(item)
+                if row["is_special"]:
+                    special_tables.append(row["account_key"])
+            return json.dumps(
+                {"accounts": accounts, "special_tables": special_tables},
+                ensure_ascii=False,
+                default=str,
+            )
 
-        elif tool_name == "get_account_history":
-            table_name = args.get("table_name", "")
-            limit = min(int(args.get("limit", 30)), 200)
-            
-            if table_name not in set(list_account_tables(db)):
-                return f"테이블 '{table_name}'이 존재하지 않습니다."
-            
-            rows = db.execute(text(f'SELECT date, balance FROM "{table_name}" ORDER BY date DESC LIMIT :l'), {"l": limit}).fetchall()
-            return json.dumps([{"date": str(r[0]), "balance": float(r[1])} for r in rows], ensure_ascii=False)
+        if tool_name == "get_account_history":
+            account_key = str(args.get("table_name", "")).strip()
+            limit = max(1, min(int(args.get("limit", 30)), 200))
+            if not account_exists(db, account_key):
+                return f"Account '{account_key}' not found."
 
-        elif tool_name == "get_summary_table":
-            table_name = args.get("table_name", "accounts_balance")
+            rows = db.execute(
+                text(
+                    """
+                    SELECT recorded_at, balance
+                    FROM account_balance_history
+                    WHERE account_key = :account_key
+                    ORDER BY recorded_at DESC
+                    LIMIT :limit
+                    """
+                ),
+                {"account_key": account_key, "limit": limit},
+            ).fetchall()
+            payload = [
+                {"date": serialize_timestamp(row[0]), "balance": float(row[1])}
+                for row in rows
+            ]
+            return json.dumps(payload, ensure_ascii=False)
+
+        if tool_name == "get_summary_table":
+            table_name = str(args.get("table_name", "accounts_balance"))
+            limit = max(1, min(int(args.get("limit", 30)), 200))
             if table_name not in _SUMMARY_TABLES:
                 table_name = "accounts_balance"
-            limit = min(int(args.get("limit", 30)), 200)
-            
-            rows = db.execute(text(f"SELECT date, balance FROM {table_name} ORDER BY date DESC LIMIT :l"), {"l": limit}).fetchall()
-            return json.dumps([{"date": str(r[0]), "balance": float(r[1])} for r in rows], ensure_ascii=False)
+            return json.dumps(fetch_summary_rows(db, table_name, limit), ensure_ascii=False)
 
-        return "알 수 없는 도구입니다."
-    except Exception as e:
-        logger.error(f"Error in execute_ask_tool: {e}")
-        return f"오류: {e}"
+        return "Unsupported tool."
+    except Exception as exc:
+        logger.error("Error in execute_ask_tool: %s", exc)
+        return f"Error: {exc}"
+
 
 def call_llm_with_tools(client: OpenAI, db: Session, user_query: str, max_rounds: int = 6) -> str:
     system = (
-        "당신은 한국어 재무 어시스턴트입니다. "
-        "필요한 데이터는 도구를 이용해 DB에서 직접 조회하세요. "
-        "답변은 한국어로 간결하고 데이터 기반으로 작성하세요. "
-        "표가 필요하면 모노스페이스 텍스트 표로 정렬하세요. "
-        "데이터가 부족하면 추정 대신 의거 데이터 부족을 명시하세요."
+        "You are a finance assistant for a personal account tracker. "
+        "Use the tools to inspect the database directly. "
+        "Answer concisely and do not invent missing data."
     )
     messages = [
         {"role": "system", "content": system},
-        {"role": "user",   "content": user_query},
+        {"role": "user", "content": user_query},
     ]
     for _ in range(max_rounds):
-        resp = client.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.2,
             max_tokens=1000,
@@ -134,47 +175,52 @@ def call_llm_with_tools(client: OpenAI, db: Session, user_query: str, max_rounds
             tools=ASK_TOOLS,
             tool_choice="auto",
         )
-        msg = resp.choices[0].message
-        
-        msg_dict = {"role": "assistant", "content": msg.content or ""}
-        if msg.tool_calls:
-            msg_dict["tool_calls"] = [
+        message = response.choices[0].message
+
+        assistant_message = {"role": "assistant", "content": message.content or ""}
+        if message.tool_calls:
+            assistant_message["tool_calls"] = [
                 {
-                    "id": tc.id,
+                    "id": tool_call.id,
                     "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
+                    },
                 }
-                for tc in msg.tool_calls
+                for tool_call in message.tool_calls
             ]
-        messages.append(msg_dict)
-        
-        if not msg.tool_calls:
-            return msg.content or ""
-            
-        for tc in msg.tool_calls:
-            try:    args = json.loads(tc.function.arguments)
-            except: args = {}
-            result = execute_ask_tool(db, tc.function.name, args)
-            messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-            
-    return "응답을 생성하지 못했습니다. (최대 반복횟수 실패)"
+        messages.append(assistant_message)
+
+        if not message.tool_calls:
+            return message.content or ""
+
+        for tool_call in message.tool_calls:
+            try:
+                arguments = json.loads(tool_call.function.arguments)
+            except Exception:
+                arguments = {}
+            result = execute_ask_tool(db, tool_call.function.name, arguments)
+            messages.append(
+                {"role": "tool", "tool_call_id": tool_call.id, "content": result}
+            )
+
+    return "Could not produce an answer within the allowed tool rounds."
+
 
 @router.post("/ask")
 async def chat_ask(
     request: ChatRequest,
     current_user: str = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     if OpenAI is None or not settings.KEY_OPENAI:
-        return {
-            "status": "error",
-            "answer": "OpenAI API가 설정되어 있지 않습니다."
-        }
-    
+        return {"status": "error", "answer": "OpenAI API is not configured."}
+
     try:
         client = OpenAI(api_key=settings.KEY_OPENAI)
         answer = call_llm_with_tools(client, db, request.query)
         return {"status": "success", "answer": answer}
-    except Exception as e:
-        logger.error(f"LLM Chat Error: {e}")
-        return {"status": "error", "answer": f"LLM 오류: {e}"}
+    except Exception as exc:
+        logger.error("LLM Chat Error: %s", exc)
+        return {"status": "error", "answer": f"LLM error: {exc}"}

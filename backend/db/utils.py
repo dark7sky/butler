@@ -1,98 +1,236 @@
-import os
 import time
-from typing import List, Set
+from datetime import date, datetime, time as dt_time, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-SUMMARY_TABLES: Set[str] = {
-    "accounts_balance",
-    "accounts_daydiff",
-    "accounts_monthdiff",
-    "accounts_diff",
+from core.config import settings
+
+LEGACY_SUMMARY_TABLE_ALIASES = {
+    "accounts_balance": "portfolio_balance_history",
+    "accounts_daydiff": "portfolio_daydiff",
+    "accounts_monthdiff": "portfolio_monthdiff",
+    "accounts_diff": "accounts_diff",
 }
+SUMMARY_TABLES = set(LEGACY_SUMMARY_TABLE_ALIASES)
 
-ACCOUNT_EXCLUDED_TABLES: Set[str] = SUMMARY_TABLES | {
-    "accounts_info",
-    "system_settings",
-    "manual_inputs",
-}
+_ACCOUNT_CACHE = {"ts": 0.0, "accounts": []}
+_CACHE_TTL_ENV = "ACCOUNT_TABLE_CACHE_TTL_SECONDS"
 
-IGNORE_TABLES_ENV = "ACCOUNT_IGNORE_TABLES"
-ACCOUNT_TABLE_CACHE_TTL_ENV = "ACCOUNT_TABLE_CACHE_TTL_SECONDS"
-
-_TABLE_CACHE = {"ts": 0.0, "tables": []}
 
 def _get_cache_ttl() -> int:
     try:
-        return max(0, int(os.environ.get(ACCOUNT_TABLE_CACHE_TTL_ENV, "30")))
+        return max(0, int(settings.__dict__.get(_CACHE_TTL_ENV, 0) or 0))
+    except ValueError:
+        pass
+    try:
+        import os
+
+        return max(0, int(os.environ.get(_CACHE_TTL_ENV, "30")))
     except ValueError:
         return 30
 
 
-def _parse_ignored_tables(value: str | None) -> Set[str]:
-    if not value:
-        return set()
-    items = set()
-    for raw in value.split(","):
-        name = raw.strip().strip('"').strip("'")
-        if name:
-            items.add(name)
-    return items
+def get_app_timezone() -> ZoneInfo | timezone:
+    try:
+        return ZoneInfo(settings.APP_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        return timezone.utc
 
 
-def get_excluded_tables() -> Set[str]:
-    return ACCOUNT_EXCLUDED_TABLES | _parse_ignored_tables(os.environ.get(IGNORE_TABLES_ENV))
+def now_local() -> datetime:
+    return datetime.now(get_app_timezone())
 
 
-def list_account_tables(db: Session) -> List[str]:
-    """Return tables that look like account history tables (date/balance columns)."""
+def local_day_start(now: datetime | None = None) -> datetime:
+    current = now or now_local()
+    return datetime.combine(current.date(), dt_time.min, tzinfo=current.tzinfo)
+
+
+def local_month_start(now: datetime | None = None) -> datetime:
+    current = now or now_local()
+    month_start = date(current.year, current.month, 1)
+    return datetime.combine(month_start, dt_time.min, tzinfo=current.tzinfo)
+
+
+def to_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=get_app_timezone()).astimezone(timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def serialize_date(value: date | datetime | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.astimezone(get_app_timezone()).date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
+def serialize_timestamp(value: datetime | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        stamp = value.astimezone(get_app_timezone()) if value.tzinfo else value
+        return stamp.strftime("%Y-%m-%d %H:%M:%S")
+    return str(value).split(".")[0]
+
+
+def list_accounts(db: Session) -> list[dict]:
     ttl = _get_cache_ttl()
-    if ttl > 0 and (time.monotonic() - _TABLE_CACHE["ts"]) < ttl:
-        return list(_TABLE_CACHE["tables"])
+    if ttl > 0 and (time.monotonic() - _ACCOUNT_CACHE["ts"]) < ttl:
+        return list(_ACCOUNT_CACHE["accounts"])
 
-    excluded = sorted(get_excluded_tables())
-    placeholders = ", ".join([f":e{i}" for i in range(len(excluded))])
-    params = {f"e{i}": name for i, name in enumerate(excluded)}
-
-    query = f"""
-        SELECT t.table_name
-        FROM information_schema.tables t
-        WHERE t.table_schema = 'public'
-          AND t.table_type = 'BASE TABLE'
-          AND t.table_name NOT IN ({placeholders})
-          AND EXISTS (
-            SELECT 1 FROM information_schema.columns c
-            WHERE c.table_schema = t.table_schema
-              AND c.table_name = t.table_name
-              AND c.column_name = 'date'
-          )
-          AND EXISTS (
-            SELECT 1 FROM information_schema.columns c
-            WHERE c.table_schema = t.table_schema
-              AND c.table_name = t.table_name
-              AND c.column_name = 'balance'
-          )
-        ORDER BY t.table_name
-    """
-    rows = db.execute(text(query), params).fetchall()
-    tables = [r[0] for r in rows]
-    _TABLE_CACHE["ts"] = time.monotonic()
-    _TABLE_CACHE["tables"] = tables
-    return tables
-
-
-def has_date_balance_columns(db: Session, table_name: str) -> bool:
     rows = db.execute(
         text(
             """
-            SELECT column_name FROM information_schema.columns
-            WHERE table_schema = 'public'
-              AND table_name = :t
-              AND column_name IN ('date', 'balance')
+            SELECT account_key, company, type, name, memo, is_special, is_active
+            FROM accounts
+            ORDER BY account_key
+            """
+        )
+    ).mappings().all()
+    accounts = [dict(row) for row in rows]
+    _ACCOUNT_CACHE["ts"] = time.monotonic()
+    _ACCOUNT_CACHE["accounts"] = accounts
+    return list(accounts)
+
+
+def list_account_keys(db: Session) -> list[str]:
+    return [row["account_key"] for row in list_accounts(db)]
+
+
+def account_exists(db: Session, account_key: str) -> bool:
+    return any(row["account_key"] == account_key for row in list_accounts(db))
+
+
+def fetch_account_snapshot_rows(db: Session, day_start_utc: datetime) -> list[dict]:
+    rows = db.execute(
+        text(
+            """
+            SELECT
+                a.account_key,
+                a.company,
+                a.type,
+                a.name,
+                a.memo,
+                a.is_special,
+                a.is_active,
+                latest.balance AS latest_balance,
+                today.balance AS today_balance,
+                yesterday.balance AS yesterday_balance
+            FROM accounts a
+            LEFT JOIN LATERAL (
+                SELECT balance
+                FROM account_balance_history h
+                WHERE h.account_key = a.account_key
+                ORDER BY h.recorded_at DESC
+                LIMIT 1
+            ) latest ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT balance
+                FROM account_balance_history h
+                WHERE h.account_key = a.account_key
+                  AND h.recorded_at >= :day_start
+                ORDER BY h.recorded_at DESC
+                LIMIT 1
+            ) today ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT balance
+                FROM account_balance_history h
+                WHERE h.account_key = a.account_key
+                  AND h.recorded_at < :day_start
+                ORDER BY h.recorded_at DESC
+                LIMIT 1
+            ) yesterday ON TRUE
+            ORDER BY a.account_key
             """
         ),
-        {"t": table_name},
-    ).fetchall()
-    cols = {r[0] for r in rows}
-    return {"date", "balance"}.issubset(cols)
+        {"day_start": day_start_utc},
+    ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def resolve_summary_table(requested: str) -> str:
+    return LEGACY_SUMMARY_TABLE_ALIASES.get(requested, "portfolio_balance_history")
+
+
+def fetch_summary_rows(db: Session, requested: str, limit: int) -> list[dict]:
+    table_name = resolve_summary_table(requested)
+    limit = max(1, min(limit, 200))
+
+    if table_name == "portfolio_balance_history":
+        rows = db.execute(
+            text(
+                """
+                SELECT recorded_at AS point_date, balance
+                FROM portfolio_balance_history
+                ORDER BY recorded_at DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": limit},
+        ).mappings().all()
+        return [
+            {"date": serialize_timestamp(row["point_date"]), "balance": float(row["balance"])}
+            for row in rows
+        ]
+
+    if table_name == "portfolio_daydiff":
+        rows = db.execute(
+            text(
+                """
+                SELECT balance_date AS point_date, balance
+                FROM portfolio_daydiff
+                ORDER BY balance_date DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": limit},
+        ).mappings().all()
+        return [
+            {"date": serialize_date(row["point_date"]), "balance": float(row["balance"])}
+            for row in rows
+        ]
+
+    if table_name == "portfolio_monthdiff":
+        rows = db.execute(
+            text(
+                """
+                SELECT balance_date AS point_date, balance
+                FROM portfolio_monthdiff
+                ORDER BY balance_date DESC
+                LIMIT :limit
+                """
+            ),
+            {"limit": limit},
+        ).mappings().all()
+        return [
+            {"date": serialize_date(row["point_date"]), "balance": float(row["balance"])}
+            for row in rows
+        ]
+
+    rows = db.execute(
+        text(
+            """
+            WITH ordered AS (
+                SELECT
+                    recorded_at,
+                    balance - COALESCE(LAG(balance) OVER (ORDER BY recorded_at), balance) AS diff
+                FROM portfolio_balance_history
+            )
+            SELECT recorded_at AS point_date, diff AS balance
+            FROM ordered
+            ORDER BY point_date DESC
+            LIMIT :limit
+            """
+        ),
+        {"limit": limit},
+    ).mappings().all()
+    return [
+        {"date": serialize_timestamp(row["point_date"]), "balance": float(row["balance"])}
+        for row in rows
+    ]
