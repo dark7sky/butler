@@ -196,8 +196,9 @@ async def get_dashboard_chart_data(
                 "ORDER BY date ASC"
             )
         elif chart_type == "year":
+            table_name = "accounts_monthdiff" if diff_mode else "accounts_balance"
             sql = (
-                "SELECT date, balance FROM accounts_monthdiff "
+                f"SELECT date, balance FROM {table_name} "
                 "WHERE date BETWEEN :start_at AND :end_at "
                 "ORDER BY date ASC"
             )
