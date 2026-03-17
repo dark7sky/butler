@@ -168,6 +168,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       children: [
         Expanded(
           child: SegmentedButton<String>(
+            showSelectedIcon: false,
             segments: [
               ButtonSegment(value: 'day', label: Text(labels['day']!)),
               ButtonSegment(value: 'month', label: Text(labels['month']!)),
