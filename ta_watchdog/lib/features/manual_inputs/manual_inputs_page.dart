@@ -35,12 +35,12 @@ class ManualInputsPage extends ConsumerWidget {
             Future<void> save() async {
               final key = keyController.text.trim();
               final raw = valueController.text.trim().replaceAll(',', '');
-              final parsed = double.tryParse(raw);
+              final parsed = int.tryParse(raw);
               if (key.isEmpty || parsed == null) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Please enter a valid key and numeric value.'),
+                      content: Text('Please enter a valid key and integer value.'),
                       duration: Duration(seconds: 2),
                       behavior: SnackBarBehavior.floating,
                     ),
@@ -63,7 +63,7 @@ class ManualInputsPage extends ConsumerWidget {
               }
 
               final nextValue =
-                  isDeltaMode ? (currentValue + parsed) : parsed;
+                  isDeltaMode ? (currentValue + parsed) : parsed.toDouble();
 
               final newModel = ManualInput(
                 id: input?.id,
@@ -90,7 +90,7 @@ class ManualInputsPage extends ConsumerWidget {
             }
 
             final raw = valueController.text.trim().replaceAll(',', '');
-            final parsed = double.tryParse(raw);
+            final parsed = int.tryParse(raw);
             final preview = isDeltaMode && isEditing && parsed != null
                 ? currentValue + parsed
                 : null;
@@ -158,16 +158,13 @@ class ManualInputsPage extends ConsumerWidget {
                     decoration: InputDecoration(
                       labelText: isDeltaMode
                           ? 'Change (+/-)'
-                          : 'Value (e.g. 1350.5)',
-                      helperText: isDeltaMode ? 'Example: +1000 or -500' : null,
+                          : 'Value (e.g. 1350)',
+                      helperText: isDeltaMode ? 'Example: +1000 or -500 (integers only)' : 'Integers only',
                       border: const OutlineInputBorder(),
                     ),
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                      signed: true,
-                    ),
+                    keyboardType: const TextInputType.numberWithOptions(signed: true),
                     inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9\-\.,]')),
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9\-]')),
                     ],
                     textInputAction: TextInputAction.done,
                     onChanged: (_) => setModalState(() {}),
