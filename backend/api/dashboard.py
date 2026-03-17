@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple
 import time
 
@@ -159,6 +159,9 @@ def make_plot(data: pd.DataFrame, title: str, fmt: str, xlims: list = None) -> i
 @router.get("/chart_native")
 async def get_dashboard_chart_data(
     chart_type: str = "day",
+    start_at: str | None = None,
+    end_at: str | None = None,
+    diff_mode: bool = False,
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -166,29 +169,86 @@ async def get_dashboard_chart_data(
     Returns raw data for native charts.
     """
     try:
+        if end_at:
+            end_dt = datetime.fromisoformat(end_at)
+        else:
+            end_dt = datetime.now()
+
+        if start_at:
+            start_dt = datetime.fromisoformat(start_at)
+        else:
+            start_dt = end_dt - timedelta(hours=24)
+
+        if start_dt > end_dt:
+            start_dt, end_dt = end_dt, start_dt
+
         sql = ""
         if chart_type == "day":
-            sql = "SELECT date, balance FROM accounts_balance ORDER BY date DESC LIMIT 100"
+            sql = (
+                "SELECT date, balance FROM accounts_balance "
+                "WHERE date BETWEEN :start_at AND :end_at "
+                "ORDER BY date ASC"
+            )
         elif chart_type == "month":
-            sql = "SELECT date, balance FROM accounts_balance ORDER BY date DESC LIMIT 2000"
+            sql = (
+                "SELECT date, balance FROM accounts_balance "
+                "WHERE date BETWEEN :start_at AND :end_at "
+                "ORDER BY date ASC"
+            )
         elif chart_type == "year":
-            sql = "SELECT date, balance FROM accounts_monthdiff ORDER BY date DESC LIMIT 12"
+            sql = (
+                "SELECT date, balance FROM accounts_monthdiff "
+                "WHERE date BETWEEN :start_at AND :end_at "
+                "ORDER BY date ASC"
+            )
         else:
             return {"status": "error", "message": "Invalid chart_type"}
 
-        result = db.execute(text(sql)).fetchall()
+        result = db.execute(text(sql), {
+            "start_at": start_dt,
+            "end_at": end_dt,
+        }).fetchall()
         
         # Format for JSON: [{"date": "...", "balance": ...}]
         data = []
-        for row in result:
-            data.append({
-                "date": str(row[0]),
-                "balance": float(row[1])
-            })
-            
-        # Optional: For day/month we might want to do some server-side filtering 
-        # but for now let's send the raw points and let Flutter handle it.
-        return {"status": "success", "data": data[::-1]} # reverse to chronological order
+        if diff_mode:
+            if chart_type == "day":
+                grouped = {}
+                for row in result:
+                    dt = row[0]
+                    key = datetime(dt.year, dt.month, dt.day, dt.hour)
+                    grouped[key] = float(row[1])
+                sorted_keys = sorted(grouped.keys())
+                prev_val = None
+                for key in sorted_keys:
+                    value = grouped[key]
+                    diff = 0.0 if prev_val is None else value - prev_val
+                    data.append({"date": key.isoformat(sep=" "), "balance": diff})
+                    prev_val = value
+            elif chart_type == "month":
+                grouped = {}
+                for row in result:
+                    dt = row[0]
+                    key = datetime(dt.year, dt.month, dt.day)
+                    grouped[key] = float(row[1])
+                sorted_keys = sorted(grouped.keys())
+                prev_val = None
+                for key in sorted_keys:
+                    value = grouped[key]
+                    diff = 0.0 if prev_val is None else value - prev_val
+                    data.append({"date": key.isoformat(sep=" "), "balance": diff})
+                    prev_val = value
+            else:
+                for row in result:
+                    data.append({"date": str(row[0]), "balance": float(row[1])})
+        else:
+            for row in result:
+                data.append({
+                    "date": str(row[0]),
+                    "balance": float(row[1])
+                })
+
+        return {"status": "success", "data": data}
 
     except Exception as e:
         return {"status": "error", "message": str(e)}

@@ -1,8 +1,10 @@
 import 'dart:math' as math;
+
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+
 import 'dashboard_provider.dart';
 
 class TrendPage extends ConsumerStatefulWidget {
@@ -15,6 +17,9 @@ class TrendPage extends ConsumerStatefulWidget {
 class _TrendPageState extends ConsumerState<TrendPage> {
   String _chartType = 'day';
   bool _showDiff = false;
+  late DateTime _endAt;
+  late DateTime _startAt;
+
   final _compactCurrency = NumberFormat.compactCurrency(
     locale: 'ko_KR',
     symbol: '',
@@ -24,33 +29,150 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       NumberFormat.simpleCurrency(locale: 'ko_KR', decimalDigits: 0);
 
   @override
+  void initState() {
+    super.initState();
+    _endAt = DateTime.now();
+    _startAt = _endAt.subtract(const Duration(hours: 24));
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final chartDataAsync = ref.watch(
+      chartDataProvider(
+        ChartRequest(
+          chartType: _chartType,
+          startAt: _startAt,
+          endAt: _endAt,
+          diffMode: _showDiff,
+        ),
+      ),
+    );
+
     return Scaffold(
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
+          _buildDateTimeFilter(context),
+          const SizedBox(height: 12),
           _buildChartSelector(),
           const SizedBox(height: 16),
-          _buildChartContainer(),
+          _buildChartContainer(chartDataAsync),
         ],
       ),
     );
   }
 
+  Widget _buildDateTimeFilter(BuildContext context) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '조회 기간',
+              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+            ),
+            const SizedBox(height: 10),
+            _buildDateTimeRow(
+              context: context,
+              label: '시작',
+              value: _startAt,
+              onChanged: (next) {
+                setState(() {
+                  _startAt = next.isAfter(_endAt) ? _endAt : next;
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            _buildDateTimeRow(
+              context: context,
+              label: '종료',
+              value: _endAt,
+              onChanged: (next) {
+                setState(() {
+                  _endAt = next;
+                  if (_startAt.isAfter(_endAt)) {
+                    _startAt = _endAt;
+                  }
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateTimeRow({
+    required BuildContext context,
+    required String label,
+    required DateTime value,
+    required ValueChanged<DateTime> onChanged,
+  }) {
+    final dateLabel = DateFormat('yyyy-MM-dd HH:mm').format(value);
+    return Row(
+      children: [
+        SizedBox(
+          width: 42,
+          child: Text(label, style: const TextStyle(color: Colors.blueGrey)),
+        ),
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: () async {
+              final pickedDate = await showDatePicker(
+                context: context,
+                initialDate: value,
+                firstDate: DateTime(2000),
+                lastDate: DateTime(2100),
+              );
+              if (pickedDate == null || !mounted) return;
+              final pickedTime = await showTimePicker(
+                context: context,
+                initialTime: TimeOfDay.fromDateTime(value),
+              );
+              if (pickedTime == null) return;
+              final next = DateTime(
+                pickedDate.year,
+                pickedDate.month,
+                pickedDate.day,
+                pickedTime.hour,
+                pickedTime.minute,
+              );
+              onChanged(next);
+            },
+            icon: const Icon(Icons.schedule, size: 18),
+            label: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(dateLabel),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildChartSelector() {
+    final labels = _showDiff
+        ? const {'day': 'hours', 'month': 'days', 'year': 'months'}
+        : const {'day': 'day', 'month': 'month', 'year': 'year'};
+
     return Row(
       children: [
         Expanded(
           child: SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'day', label: Text('Today')),
-              ButtonSegment(value: 'month', label: Text('Month')),
-              ButtonSegment(value: 'year', label: Text('Year')),
+            segments: [
+              ButtonSegment(value: 'day', label: Text(labels['day']!)),
+              ButtonSegment(value: 'month', label: Text(labels['month']!)),
+              ButtonSegment(value: 'year', label: Text(labels['year']!)),
             ],
             selected: {_chartType},
             onSelectionChanged: (Set<String> newSelection) {
               setState(() {
                 _chartType = newSelection.first;
+                _applyQuickRange(_chartType);
               });
             },
           ),
@@ -64,6 +186,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               onChanged: (value) {
                 setState(() {
                   _showDiff = value;
+                  _applyQuickRange(_chartType);
                 });
               },
             ),
@@ -73,15 +196,29 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     );
   }
 
-  Widget _buildChartContainer() {
-    final chartDataAsync = ref.watch(chartDataProvider(_chartType));
+  void _applyQuickRange(String type) {
+    if (_showDiff) {
+      if (type == 'day') {
+        _startAt = _endAt.subtract(const Duration(hours: 24));
+      } else if (type == 'month') {
+        _startAt = _endAt.subtract(const Duration(days: 30));
+      } else {
+        _startAt = DateTime(_endAt.year - 1, _endAt.month, _endAt.day, _endAt.hour, _endAt.minute);
+      }
+      return;
+    }
 
-    final title = _chartType == 'day'
-        ? 'Today Trend'
-        : _chartType == 'month'
-            ? 'Month Trend'
-            : 'Year Trend';
+    if (type == 'day') {
+      _startAt = _endAt.subtract(const Duration(hours: 24));
+    } else if (type == 'month') {
+      _startAt = DateTime(_endAt.year, _endAt.month - 1, _endAt.day, _endAt.hour, _endAt.minute);
+    } else {
+      _startAt = DateTime(_endAt.year - 1, _endAt.month, _endAt.day, _endAt.hour, _endAt.minute);
+    }
+  }
 
+  Widget _buildChartContainer(AsyncValue<List<dynamic>> chartDataAsync) {
+    final titlePrefix = _showDiff ? 'Diff' : 'Total';
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -91,12 +228,12 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              title,
+              '$titlePrefix Trend',
               style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
             ),
             const SizedBox(height: 24),
             SizedBox(
-              height: 400, // Slightly taller as it's a dedicated page
+              height: 400,
               child: chartDataAsync.when(
                 data: (data) => _buildNativeChart(data),
                 loading: () => const Center(child: CircularProgressIndicator()),
@@ -114,25 +251,15 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       return const Center(child: Text('No data available'));
     }
 
-    final filteredData = _filterByRange(rawData);
-    if (filteredData.isEmpty) {
-      return const Center(child: Text('No data in selected range'));
-    }
-
     final spots = <FlSpot>[];
     double minY = double.infinity;
     double maxY = double.negativeInfinity;
 
-    for (int i = 0; i < filteredData.length; i++) {
-        final current = _asDouble(filteredData[i]['balance']);
-        final val = _showDiff && i > 0
-            ? current - _asDouble(filteredData[i - 1]['balance'])
-            : _showDiff
-                ? 0.0
-                : current;
-        spots.add(FlSpot(i.toDouble(), val));
-        if (val < minY) minY = val;
-        if (val > maxY) maxY = val;
+    for (int i = 0; i < rawData.length; i++) {
+      final val = _asDouble(rawData[i]['balance']);
+      spots.add(FlSpot(i.toDouble(), val));
+      if (val < minY) minY = val;
+      if (val > maxY) maxY = val;
     }
 
     double range = (maxY - minY).abs();
@@ -147,10 +274,8 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       maxY += 1;
     }
 
-    final yInterval =
-        ((maxY - minY) / 5).abs().clamp(1, double.infinity).toDouble();
-    final xInterval =
-        (filteredData.length / 5).ceilToDouble().clamp(1, double.infinity).toDouble();
+    final yInterval = ((maxY - minY) / 5).abs().clamp(1, double.infinity).toDouble();
+    final xInterval = (rawData.length / 5).ceilToDouble().clamp(1, double.infinity).toDouble();
 
     return LineChart(
       LineChartData(
@@ -174,18 +299,15 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               showTitles: true,
               getTitlesWidget: (value, meta) {
                 final index = value.toInt();
-                if (index < 0 || index >= filteredData.length) return const SizedBox();
-                
-                int interval = (filteredData.length / 5).ceil();
-                if (index % interval != 0 && index != filteredData.length - 1) return const SizedBox();
+                if (index < 0 || index >= rawData.length) return const SizedBox();
 
-                final dateStr = filteredData[index]['date']?.toString() ?? '';
-                final date = _parseDate(dateStr);
-                String label = '';
-                if (_chartType == 'day') label = DateFormat('HH:mm').format(date);
-                if (_chartType == 'month') label = DateFormat('MM/dd').format(date);
-                if (_chartType == 'year') label = DateFormat('yyyy/MM').format(date);
+                final interval = (rawData.length / 5).ceil();
+                if (index % interval != 0 && index != rawData.length - 1) {
+                  return const SizedBox();
+                }
 
+                final date = _parseDate(rawData[index]['date']?.toString() ?? '');
+                final label = _bottomLabel(date);
                 return Padding(
                   padding: const EdgeInsets.only(top: 8.0),
                   child: Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
@@ -197,15 +319,15 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
           rightTitles: AxisTitles(
             sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                    return Text(
-                        _compactCurrency.format(value),
-                        style: const TextStyle(fontSize: 9, color: Colors.grey)
-                    );
-                },
-                reservedSize: 45
-            )
+              showTitles: true,
+              getTitlesWidget: (value, meta) {
+                return Text(
+                  _compactCurrency.format(value),
+                  style: const TextStyle(fontSize: 9, color: Colors.grey),
+                );
+              },
+              reservedSize: 45,
+            ),
           ),
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
@@ -230,14 +352,12 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           touchTooltipData: LineTouchTooltipData(
             getTooltipItems: (touchedSpots) {
               return touchedSpots.map((spot) {
-                final dateStr = filteredData[spot.x.toInt()]['date']?.toString() ?? '';
+                final dateStr = rawData[spot.x.toInt()]['date']?.toString() ?? '';
                 final balance = spot.y;
                 final valueText = _showDiff
                     ? _formatSigned(balance)
                     : _tooltipCurrency.format(balance);
-                final dateLabel = _chartType == 'year'
-                    ? DateFormat('yyyy/MM').format(_parseDate(dateStr))
-                    : DateFormat('MM/dd HH:mm').format(_parseDate(dateStr));
+                final dateLabel = DateFormat('yyyy-MM-dd HH:mm').format(_parseDate(dateStr));
                 return LineTooltipItem(
                   '$dateLabel\n',
                   const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -256,6 +376,18 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     );
   }
 
+  String _bottomLabel(DateTime date) {
+    if (_showDiff) {
+      if (_chartType == 'day') return DateFormat('MM/dd HH:mm').format(date);
+      if (_chartType == 'month') return DateFormat('MM/dd').format(date);
+      return DateFormat('yyyy/MM').format(date);
+    }
+
+    if (_chartType == 'day') return DateFormat('HH:mm').format(date);
+    if (_chartType == 'month') return DateFormat('MM/dd').format(date);
+    return DateFormat('yyyy/MM').format(date);
+  }
+
   double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0.0;
@@ -264,28 +396,11 @@ class _TrendPageState extends ConsumerState<TrendPage> {
   DateTime _parseDate(String input) {
     final parsed = DateTime.tryParse(input);
     if (parsed != null) return parsed;
-    // Fallback for 'yyyy-MM-dd HH:mm:ss' (space-separated)
     try {
       return DateFormat('yyyy-MM-dd HH:mm:ss').parse(input);
     } catch (_) {
       return DateTime.now();
     }
-  }
-
-  List<dynamic> _filterByRange(List<dynamic> rawData) {
-    final now = DateTime.now();
-    return rawData.where((item) {
-      final date = _parseDate(item['date']?.toString() ?? '');
-      if (_chartType == 'day') {
-        return date.year == now.year &&
-            date.month == now.month &&
-            date.day == now.day;
-      }
-      if (_chartType == 'month') {
-        return date.year == now.year && date.month == now.month;
-      }
-      return date.year == now.year;
-    }).toList();
   }
 
   String _formatSigned(double value) {

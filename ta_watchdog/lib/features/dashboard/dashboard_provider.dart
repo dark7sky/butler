@@ -27,9 +27,43 @@ final dashboardSummaryProvider = FutureProvider.autoDispose<Map<String, dynamic>
   return response.data['data'];
 });
 
-final chartDataProvider = FutureProvider.autoDispose.family<List<dynamic>, String>((ref, type) async {
+class ChartRequest {
+  final String chartType;
+  final DateTime startAt;
+  final DateTime endAt;
+  final bool diffMode;
+
+  const ChartRequest({
+    required this.chartType,
+    required this.startAt,
+    required this.endAt,
+    required this.diffMode,
+  });
+
+  @override
+  bool operator ==(Object other) {
+    return other is ChartRequest &&
+        other.chartType == chartType &&
+        other.startAt == startAt &&
+        other.endAt == endAt &&
+        other.diffMode == diffMode;
+  }
+
+  @override
+  int get hashCode => Object.hash(chartType, startAt, endAt, diffMode);
+}
+
+final chartDataProvider = FutureProvider.autoDispose.family<List<dynamic>, ChartRequest>((ref, request) async {
   final dio = ref.watch(dioProvider);
-  final response = await dio.get('/api/dashboard/chart_native', queryParameters: {'chart_type': type});
+  final response = await dio.get(
+    '/api/dashboard/chart_native',
+    queryParameters: {
+      'chart_type': request.chartType,
+      'start_at': request.startAt.toIso8601String(),
+      'end_at': request.endAt.toIso8601String(),
+      'diff_mode': request.diffMode,
+    },
+  );
   return response.data['data'];
 });
 final accountsProvider = FutureProvider<List<dynamic>>((ref) async {
