@@ -64,7 +64,12 @@ final chartDataProvider = FutureProvider.autoDispose.family<List<dynamic>, Chart
       'diff_mode': request.diffMode,
     },
   );
-  return response.data['data'];
+
+  if (response.data['status'] == 'error') {
+    throw Exception(response.data['message']);
+  }
+
+  return (response.data['data'] as List?) ?? [];
 });
 final accountsProvider = FutureProvider<List<dynamic>>((ref) async {
   final dio = ref.watch(dioProvider);
