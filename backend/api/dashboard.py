@@ -185,22 +185,22 @@ async def get_dashboard_chart_data(
         sql = ""
         if chart_type == "day":
             sql = (
-                "SELECT date, balance FROM accounts_balance "
-                "WHERE date BETWEEN :start_at AND :end_at "
-                "ORDER BY date ASC"
+                "SELECT date::timestamp AS date, balance FROM accounts_balance "
+                "WHERE date::timestamp BETWEEN :start_at AND :end_at "
+                "ORDER BY date::timestamp ASC"
             )
         elif chart_type == "month":
             sql = (
-                "SELECT date, balance FROM accounts_balance "
-                "WHERE date BETWEEN :start_at AND :end_at "
-                "ORDER BY date ASC"
+                "SELECT date::timestamp AS date, balance FROM accounts_balance "
+                "WHERE date::timestamp BETWEEN :start_at AND :end_at "
+                "ORDER BY date::timestamp ASC"
             )
         elif chart_type == "year":
             table_name = "accounts_monthdiff" if diff_mode else "accounts_balance"
             sql = (
-                f"SELECT date, balance FROM {table_name} "
-                "WHERE date BETWEEN :start_at AND :end_at "
-                "ORDER BY date ASC"
+                f"SELECT date::timestamp AS date, balance FROM {table_name} "
+                "WHERE date::timestamp BETWEEN :start_at AND :end_at "
+                "ORDER BY date::timestamp ASC"
             )
         else:
             return {"status": "error", "message": "Invalid chart_type"}
