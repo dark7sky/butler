@@ -152,6 +152,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 enabled: !isGenerating,
                 decoration: InputDecoration(
                   hintText: 'Ask your WatchDog...',
+                  hintStyle: TextStyle(color: Colors.grey[700]),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide.none,
