@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'core/brand.dart';
+import 'core/app_theme.dart';
 import 'features/auth/auth_repository.dart';
 import 'features/auth/login_page.dart';
 import 'features/home/home_page.dart';
 
 void main() {
-  runApp(
-    const ProviderScope(
-      child: WatchDogApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: WatchDogApp()));
 }
 
 class WatchDogApp extends StatelessWidget {
@@ -18,12 +16,11 @@ class WatchDogApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Total Account',
+      title: AppBrand.appName,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blueGrey),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: ThemeMode.system,
       home: const AuthWrapper(),
     );
   }
@@ -62,7 +59,7 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
       // which will show the LoginPage. We DO NOT call logout() here
       // so the token stays in storage for the next attempt.
     }
-    
+
     setState(() {
       _isLoading = false;
     });
@@ -71,11 +68,7 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_isAuthenticated) {

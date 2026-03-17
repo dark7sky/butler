@@ -33,15 +33,16 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     final accountsAsync = ref.watch(accountsProvider);
     final historyAsync = ref.watch(
       accountHistoryProvider(
-        AccountHistoryRequest(accountNumber: widget.accountNumber, limit: _limit),
+        AccountHistoryRequest(
+          accountNumber: widget.accountNumber,
+          limit: _limit,
+        ),
       ),
     );
 
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.accountName),
-        backgroundColor: Colors.blueGrey[800],
-        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.copy),
@@ -63,8 +64,9 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
           if (history.isEmpty) {
             return const Center(child: Text('No history available'));
           }
-          final displayHistory =
-              _groupByDay ? _collapseToDailyLast(history) : history;
+          final displayHistory = _groupByDay
+              ? _collapseToDailyLast(history)
+              : history;
           return RefreshIndicator(
             onRefresh: () => ref.refresh(
               accountHistoryProvider(
@@ -97,7 +99,8 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                     final balance = _asDouble(entry['balance']);
                     double? diff;
                     if (index + 1 < displayHistory.length) {
-                      diff = balance -
+                      diff =
+                          balance -
                           _asDouble(displayHistory[index + 1]['balance']);
                     }
                     return _buildHistoryRow(date, balance, diff);
@@ -265,7 +268,10 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
             children: [
               Text(
                 _dateFormat.format(date),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
               ),
               Text(
                 _timeFormat.format(date),
@@ -385,10 +391,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     return items.map((e) {
       final date = latestAt[e.key];
       if (date == null) return e.value;
-      return {
-        ...e.value,
-        'date': date.toIso8601String(),
-      };
+      return {...e.value, 'date': date.toIso8601String()};
     }).toList();
   }
 }

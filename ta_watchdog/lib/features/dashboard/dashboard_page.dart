@@ -130,7 +130,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: CircleAvatar(
           backgroundColor: (isPositive ? Colors.teal : Colors.redAccent)
-              .withOpacity(0.1),
+              .withValues(alpha: 0.1),
           child: Icon(
             isPositive ? Icons.arrow_upward : Icons.arrow_downward,
             color: isPositive ? Colors.teal : Colors.redAccent,

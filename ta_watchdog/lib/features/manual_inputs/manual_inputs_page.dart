@@ -20,7 +20,7 @@ class ManualInputsPage extends ConsumerWidget {
 
     final keyController = TextEditingController(text: input?.keyName);
     final valueController = TextEditingController(
-      text: isEditing ? input!.value.toString() : '',
+      text: isEditing ? currentValue.toString() : '',
     );
 
     showModalBottomSheet(
@@ -226,7 +226,7 @@ class ManualInputsPage extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final input = inputs[index];
                 final updatedText = input.updatedAt != null
-                    ? ' • ${DateFormat('MM/dd HH:mm').format(input.updatedAt!)}'
+                    ? ' Updated ${DateFormat('MM/dd HH:mm').format(input.updatedAt!)}'
                     : '';
                 return Dismissible(
                   key: ValueKey(input.id),

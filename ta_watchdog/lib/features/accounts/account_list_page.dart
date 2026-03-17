@@ -82,7 +82,10 @@ class AccountListPage extends ConsumerWidget {
                   if (acc['type'] != null)
                     Text(
                       acc['type'],
-                      style: TextStyle(fontSize: 11, color: Colors.blueGrey.withOpacity(0.7)),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.blueGrey.withValues(alpha: 0.7),
+                      ),
                     ),
                 ],
               ),

@@ -24,8 +24,7 @@ String get baseUrl {
 
   // For Android Emulator, localhost is 10.0.2.2
   // Override using --dart-define=API_BASE_URL=http://<your-lan-ip>:8921
-  const bool useEmulator = true;
-  if (useEmulator) {
+  if (defaultTargetPlatform == TargetPlatform.android) {
     return 'http://10.0.2.2:8921';
   }
 

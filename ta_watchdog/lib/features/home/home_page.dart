@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/brand.dart';
 import '../dashboard/dashboard_page.dart';
 import '../dashboard/trend_page.dart';
 import '../manual_inputs/manual_inputs_page.dart';
@@ -27,11 +28,24 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Total Account'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                AppBrand.markAsset,
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Text(AppBrand.appName),
+          ],
+        ),
         centerTitle: true,
         elevation: 0,
-        backgroundColor: Colors.blueGrey[800],
-        foregroundColor: Colors.white,
       ),
       body: _pages[_currentIndex],
       bottomNavigationBar: NavigationBar(

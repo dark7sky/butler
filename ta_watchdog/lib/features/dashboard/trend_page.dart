@@ -72,13 +72,16 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              '조회 기간',
-              style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+              'Range',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.blueGrey,
+              ),
             ),
             const SizedBox(height: 10),
             _buildDateTimeRow(
               context: context,
-              label: '시작',
+              label: 'Start',
               value: _startAt,
               onChanged: (next) {
                 setState(() {
@@ -89,7 +92,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
             const SizedBox(height: 8),
             _buildDateTimeRow(
               context: context,
-              label: '종료',
+              label: 'End',
               value: _endAt,
               onChanged: (next) {
                 setState(() {
@@ -128,12 +131,14 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                 firstDate: DateTime(2000),
                 lastDate: DateTime(2100),
               );
-              if (pickedDate == null || !mounted) return;
+              if (pickedDate == null || !context.mounted) return;
+
               final pickedTime = await showTimePicker(
                 context: context,
                 initialTime: TimeOfDay.fromDateTime(value),
               );
-              if (pickedTime == null) return;
+              if (pickedTime == null || !context.mounted) return;
+
               final next = DateTime(
                 pickedDate.year,
                 pickedDate.month,
@@ -203,7 +208,13 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       } else if (type == 'month') {
         _startAt = _endAt.subtract(const Duration(days: 30));
       } else {
-        _startAt = DateTime(_endAt.year - 1, _endAt.month, _endAt.day, _endAt.hour, _endAt.minute);
+        _startAt = DateTime(
+          _endAt.year - 1,
+          _endAt.month,
+          _endAt.day,
+          _endAt.hour,
+          _endAt.minute,
+        );
       }
       return;
     }
@@ -211,9 +222,21 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     if (type == 'day') {
       _startAt = _endAt.subtract(const Duration(hours: 24));
     } else if (type == 'month') {
-      _startAt = DateTime(_endAt.year, _endAt.month - 1, _endAt.day, _endAt.hour, _endAt.minute);
+      _startAt = DateTime(
+        _endAt.year,
+        _endAt.month - 1,
+        _endAt.day,
+        _endAt.hour,
+        _endAt.minute,
+      );
     } else {
-      _startAt = DateTime(_endAt.year - 1, _endAt.month, _endAt.day, _endAt.hour, _endAt.minute);
+      _startAt = DateTime(
+        _endAt.year - 1,
+        _endAt.month,
+        _endAt.day,
+        _endAt.hour,
+        _endAt.minute,
+      );
     }
   }
 
@@ -229,7 +252,10 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           children: [
             Text(
               '$titlePrefix Trend',
-              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.blueGrey,
+              ),
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -274,8 +300,14 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       maxY += 1;
     }
 
-    final yInterval = ((maxY - minY) / 5).abs().clamp(1, double.infinity).toDouble();
-    final xInterval = (rawData.length / 5).ceilToDouble().clamp(1, double.infinity).toDouble();
+    final yInterval = ((maxY - minY) / 5)
+        .abs()
+        .clamp(1, double.infinity)
+        .toDouble();
+    final xInterval = (rawData.length / 5)
+        .ceilToDouble()
+        .clamp(1, double.infinity)
+        .toDouble();
 
     return LineChart(
       LineChartData(
@@ -285,11 +317,11 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           horizontalInterval: yInterval,
           verticalInterval: xInterval,
           getDrawingHorizontalLine: (value) => FlLine(
-            color: Colors.blueGrey.withOpacity(0.1),
+            color: Colors.blueGrey.withValues(alpha: 0.1),
             strokeWidth: 1,
           ),
           getDrawingVerticalLine: (value) => FlLine(
-            color: Colors.blueGrey.withOpacity(0.1),
+            color: Colors.blueGrey.withValues(alpha: 0.1),
             strokeWidth: 1,
           ),
         ),
@@ -299,7 +331,9 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               showTitles: true,
               getTitlesWidget: (value, meta) {
                 final index = value.toInt();
-                if (index < 0 || index >= rawData.length) return const SizedBox();
+                if (index < 0 || index >= rawData.length) {
+                  return const SizedBox();
+                }
 
                 final interval = (rawData.length / 5).ceil();
                 if (index % interval != 0 && index != rawData.length - 1) {
@@ -310,7 +344,10 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                 final label = _bottomLabel(date);
                 return Padding(
                   padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                  child: Text(
+                    label,
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
                 );
               },
               reservedSize: 22,
@@ -344,7 +381,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: Colors.blueAccent.withOpacity(0.1),
+              color: Colors.blueAccent.withValues(alpha: 0.1),
             ),
           ),
         ],
@@ -357,14 +394,21 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                 final valueText = _showDiff
                     ? _formatSigned(balance)
                     : _tooltipCurrency.format(balance);
-                final dateLabel = DateFormat('yyyy-MM-dd HH:mm').format(_parseDate(dateStr));
+                final dateLabel =
+                    DateFormat('yyyy-MM-dd HH:mm').format(_parseDate(dateStr));
                 return LineTooltipItem(
                   '$dateLabel\n',
-                  const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                   children: [
                     TextSpan(
                       text: valueText,
-                      style: const TextStyle(color: Colors.yellow, fontSize: 13),
+                      style: const TextStyle(
+                        color: Colors.yellow,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 );
