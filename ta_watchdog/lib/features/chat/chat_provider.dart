@@ -40,11 +40,7 @@ class ChatMessage {
   }
 
   factory ChatMessage.error(String message) {
-    return ChatMessage(
-      text: message,
-      isUser: false,
-      isError: true,
-    );
+    return ChatMessage(text: message, isUser: false, isError: true);
   }
 
   Map<String, dynamic> toJson() {
@@ -74,17 +70,12 @@ class ChatState {
   final List<ChatMessage> messages;
   final bool isLoading;
 
-  const ChatState({
-    required this.messages,
-    required this.isLoading,
-  });
+  const ChatState({required this.messages, required this.isLoading});
 
-  factory ChatState.initial() => const ChatState(messages: [], isLoading: false);
+  factory ChatState.initial() =>
+      const ChatState(messages: [], isLoading: false);
 
-  ChatState copyWith({
-    List<ChatMessage>? messages,
-    bool? isLoading,
-  }) {
+  ChatState copyWith({List<ChatMessage>? messages, bool? isLoading}) {
     return ChatState(
       messages: messages ?? this.messages,
       isLoading: isLoading ?? this.isLoading,
@@ -115,6 +106,12 @@ class ChatNotifier extends Notifier<ChatState> {
       addUser: false,
       receiveTimeoutOverride: const Duration(minutes: 5),
     );
+  }
+
+  Future<void> reloadHistory() async {
+    if (state.isLoading) return;
+    state = state.copyWith(messages: []);
+    await _loadHistory();
   }
 
   Future<void> _send(
@@ -164,7 +161,9 @@ class ChatNotifier extends Notifier<ChatState> {
       if (_isTimeout(e)) {
         newHistory.add(ChatMessage.timeoutError(query));
       } else {
-        newHistory.add(ChatMessage.error('Error connecting to LLM: ${e.message}'));
+        newHistory.add(
+          ChatMessage.error('Error connecting to LLM: ${e.message}'),
+        );
       }
       state = state.copyWith(messages: newHistory, isLoading: false);
       await _persistHistory(newHistory);
@@ -195,7 +194,9 @@ class ChatNotifier extends Notifier<ChatState> {
       if (decoded is! List) return;
       final messages = decoded
           .whereType<Map>()
-          .map((entry) => ChatMessage.fromJson(Map<String, dynamic>.from(entry)))
+          .map(
+            (entry) => ChatMessage.fromJson(Map<String, dynamic>.from(entry)),
+          )
           .toList();
       state = state.copyWith(messages: messages);
     } catch (_) {
@@ -205,8 +206,12 @@ class ChatNotifier extends Notifier<ChatState> {
 
   Future<void> _persistHistory(List<ChatMessage> messages) async {
     final prefs = await SharedPreferences.getInstance();
-    final persistedMessages = messages.where((message) => !message.isLoading).toList();
-    final raw = jsonEncode(persistedMessages.map((message) => message.toJson()).toList());
+    final persistedMessages = messages
+        .where((message) => !message.isLoading)
+        .toList();
+    final raw = jsonEncode(
+      persistedMessages.map((message) => message.toJson()).toList(),
+    );
     await prefs.setString(_storageKey, raw);
   }
 }
