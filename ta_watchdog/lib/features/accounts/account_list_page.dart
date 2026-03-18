@@ -87,6 +87,35 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
       return '$sign${currency.format(value.abs())}';
     }
 
+    String textValue(dynamic value) => value?.toString().trim() ?? '';
+
+    bool matchesKeyword(Map<String, dynamic> account) {
+      final normalizedKeyword = _keyword.trim().toLowerCase();
+      if (normalizedKeyword.isEmpty) return true;
+
+      final searchable = [
+        textValue(account['account_number']),
+        textValue(account['name']),
+        textValue(account['memo']),
+        textValue(account['company']),
+        textValue(account['type']),
+      ].join(' ').toLowerCase();
+
+      return searchable.contains(normalizedKeyword);
+    }
+
+    void copyAccountNumber(String accountNumber) {
+      if (accountNumber.isEmpty) return;
+      Clipboard.setData(ClipboardData(text: accountNumber));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('계좌번호를 복사했어요: $accountNumber'),
+          duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+
     return Scaffold(
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(accountsProvider.future),
@@ -247,6 +276,152 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                             fontSize: 11,
                             color: Colors.blueGrey.withValues(alpha: 0.7),
                           ),
+                          title: Row(
+                            children: [
+                              Text(
+                                company,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Colors.blueGrey,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => copyAccountNumber(accountNumber),
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 2,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            accountName,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 15,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (accountNumber.isNotEmpty) ...[
+                                          const SizedBox(width: 4),
+                                          const Icon(
+                                            Icons.copy,
+                                            size: 14,
+                                            color: Colors.grey,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 4),
+                              InkWell(
+                                onTap: () => copyAccountNumber(accountNumber),
+                                borderRadius: BorderRadius.circular(4),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 2,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          accountNumber,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
+                                            fontFamily: 'monospace',
+                                            decoration:
+                                                TextDecoration.underline,
+                                          ),
+                                        ),
+                                      ),
+                                      if (accountNumber.isNotEmpty) ...[
+                                        const SizedBox(width: 4),
+                                        const Icon(
+                                          Icons.copy,
+                                          size: 12,
+                                          color: Colors.grey,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (type.isNotEmpty)
+                                Text(
+                                  type,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.blueGrey.withValues(
+                                      alpha: 0.7,
+                                    ),
+                                  ),
+                                ),
+                              if (memo.isNotEmpty)
+                                Text(
+                                  memo,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                currency.format(acc['latest_balance']),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  color: Colors.blueGrey[900],
+                                ),
+                              ),
+                              Text(
+                                formatSigned(todayDiff),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: diffColor,
+                                ),
+                              ),
+                              const Icon(
+                                Icons.chevron_right,
+                                size: 16,
+                                color: Colors.grey,
+                              ),
+                            ],
+                          ),
+                          onTap: () {
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (context) => AccountHistoryPage(
+                                  accountNumber: accountNumber,
+                                  accountName: accountName.isNotEmpty
+                                      ? accountName
+                                      : company.isNotEmpty
+                                      ? company
+                                      : 'Account',
+                                ),
+                              ),
+                            );
+                          },
                         ),
                     ],
                   ),
@@ -288,9 +463,8 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                         ),
                       ),
                     );
-                  },
-                );
-              },
+                  }),
+              ],
             );
           },
           loading: () => ListView(
