@@ -21,6 +21,21 @@ class AccountHistoryRequest {
   int get hashCode => Object.hash(accountNumber, limit);
 }
 
+
+final homeTabProvider = StateProvider<int>((ref) => 0);
+final trendChartTypeProvider = StateProvider<String>((ref) => 'day');
+final selectedAccountProvider = StateProvider<AccountSelection?>((ref) => null);
+
+class AccountSelection {
+  final String accountNumber;
+  final String accountName;
+
+  const AccountSelection({
+    required this.accountNumber,
+    required this.accountName,
+  });
+}
+
 final dashboardSummaryProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   final dio = ref.watch(dioProvider);
   final response = await dio.get('/api/dashboard/summary');

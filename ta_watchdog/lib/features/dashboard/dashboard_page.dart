@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+
 import 'dashboard_provider.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
@@ -13,7 +14,10 @@ class DashboardPage extends ConsumerStatefulWidget {
 
 class _DashboardPageState extends ConsumerState<DashboardPage> {
   bool _isBalanceVisible = false;
-  final _currency = NumberFormat.simpleCurrency(locale: 'ko_KR', decimalDigits: 0);
+  final _currency = NumberFormat.simpleCurrency(
+    locale: 'ko_KR',
+    decimalDigits: 0,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +32,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             data: (data) => Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildSummaryCards(data, context),
+                _buildSummaryCards(data),
                 const SizedBox(height: 24),
                 _buildTodayDetailSection(data['today_detail'], context),
               ],
@@ -107,11 +111,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
   Widget _buildDetailItem(Map<String, dynamic> item, BuildContext context) {
     final diffValue = _asDouble(item['diff']);
-    final bool isPositive = diffValue > 0;
+    final isPositive = diffValue > 0;
 
-    String company = '';
-    String name = '';
-    String accountNumber = '';
+    var company = '';
+    var name = '';
+    var accountNumber = '';
 
     final info = item['info'];
     if (info is Map) {
@@ -127,6 +131,12 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       margin: const EdgeInsets.only(bottom: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
+        onTap: accountNumber.isEmpty
+            ? null
+            : () => _openAccountDetail(
+                  accountNumber: accountNumber,
+                  accountName: name.isNotEmpty ? name : company,
+                ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: CircleAvatar(
           backgroundColor: (isPositive ? Colors.teal : Colors.redAccent)
@@ -199,7 +209,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     );
   }
 
-  Widget _buildSummaryCards(Map<String, dynamic> data, BuildContext context) {
+  Widget _buildSummaryCards(Map<String, dynamic> data) {
     final daily = data['summary_daily'];
     final monthly = data['summary_monthly'];
 
@@ -226,24 +236,32 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         Row(
           children: [
             Expanded(
-              child: _buildMetricCard(
-                title: "Today's Change",
-                value:
-                    '${daily['diff_day'] > 0 ? '+' : ''}${_currency.format(daily['diff_day'])}',
-                icon: Icons.today,
-                color: daily['diff_day'] >= 0 ? Colors.teal : Colors.redAccent,
+              child: GestureDetector(
+                onTap: () => _openTrend('day'),
+                child: _buildMetricCard(
+                  title: "Today's Change",
+                  value:
+                      '${daily['diff_day'] > 0 ? '+' : ''}${_currency.format(daily['diff_day'])}',
+                  icon: Icons.today,
+                  color: daily['diff_day'] >= 0
+                      ? Colors.teal
+                      : Colors.redAccent,
+                ),
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: _buildMetricCard(
-                title: "Month's Change",
-                value:
-                    '${monthly['diff_this_month'] > 0 ? '+' : ''}${_currency.format(monthly['diff_this_month'])}',
-                icon: Icons.calendar_month,
-                color: monthly['diff_this_month'] >= 0
-                    ? Colors.teal
-                    : Colors.redAccent,
+              child: GestureDetector(
+                onTap: () => _openTrend('month'),
+                child: _buildMetricCard(
+                  title: "Month's Change",
+                  value:
+                      '${monthly['diff_this_month'] > 0 ? '+' : ''}${_currency.format(monthly['diff_this_month'])}',
+                  icon: Icons.calendar_month,
+                  color: monthly['diff_this_month'] >= 0
+                      ? Colors.teal
+                      : Colors.redAccent,
+                ),
               ),
             ),
           ],
@@ -308,6 +326,22 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         ),
       ),
     );
+  }
+
+  void _openTrend(String chartType) {
+    ref.read(trendChartTypeProvider.notifier).state = chartType;
+    ref.read(homeTabProvider.notifier).state = 1;
+  }
+
+  void _openAccountDetail({
+    required String accountNumber,
+    required String accountName,
+  }) {
+    ref.read(selectedAccountProvider.notifier).state = AccountSelection(
+      accountNumber: accountNumber,
+      accountName: accountName,
+    );
+    ref.read(homeTabProvider.notifier).state = 2;
   }
 
   double _asDouble(dynamic value) {
