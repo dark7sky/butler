@@ -23,6 +23,7 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - postgres_default
+      - nginx_internal_net
     volumes:
       # Optional: Mount the backend directory for local development (hot-reload)
       # - ./:/app
@@ -33,4 +34,6 @@ volumes:
 
 networks:
   postgres_default:
+    external: true
+  nginx_internal_net:
     external: true
