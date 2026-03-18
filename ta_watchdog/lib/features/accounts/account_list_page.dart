@@ -43,9 +43,14 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
       account['memo'],
       account['company'],
       account['type'],
-    ].whereType<String>().map((value) => value.toLowerCase()).join(' ');
+    ].map((value) => value?.toString() ?? '').join(' ').toLowerCase();
 
     return haystack.contains(normalizedQuery);
+  }
+
+  double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
   }
 
   @override
@@ -73,11 +78,6 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
       decimalDigits: 0,
     );
 
-    double asDouble(dynamic value) {
-      if (value is num) return value.toDouble();
-      return double.tryParse(value?.toString() ?? '') ?? 0.0;
-    }
-
     String formatSigned(double value) {
       final sign = value > 0
           ? '+'
@@ -85,35 +85,6 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
           ? '-'
           : '';
       return '$sign${currency.format(value.abs())}';
-    }
-
-    String textValue(dynamic value) => value?.toString().trim() ?? '';
-
-    bool matchesKeyword(Map<String, dynamic> account) {
-      final normalizedKeyword = _keyword.trim().toLowerCase();
-      if (normalizedKeyword.isEmpty) return true;
-
-      final searchable = [
-        textValue(account['account_number']),
-        textValue(account['name']),
-        textValue(account['memo']),
-        textValue(account['company']),
-        textValue(account['type']),
-      ].join(' ').toLowerCase();
-
-      return searchable.contains(normalizedKeyword);
-    }
-
-    void copyAccountNumber(String accountNumber) {
-      if (accountNumber.isEmpty) return;
-      Clipboard.setData(ClipboardData(text: accountNumber));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('계좌번호를 복사했어요: $accountNumber'),
-          duration: const Duration(seconds: 1),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
     }
 
     return Scaffold(
@@ -124,8 +95,8 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
             final normalizedQuery = _searchQuery.trim().toLowerCase();
             final sortedAccounts = [...accounts];
             sortedAccounts.sort((a, b) {
-              final diffA = asDouble(a['today_diff']);
-              final diffB = asDouble(b['today_diff']);
+              final diffA = _asDouble(a['today_diff']);
+              final diffB = _asDouble(b['today_diff']);
               final hasDiffA = diffA != 0.0;
               final hasDiffB = diffB != 0.0;
               if (hasDiffA != hasDiffB) {
@@ -133,8 +104,8 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
               }
               final absCompare = diffB.abs().compareTo(diffA.abs());
               if (absCompare != 0) return absCompare;
-              final balA = asDouble(a['latest_balance']);
-              final balB = asDouble(b['latest_balance']);
+              final balA = _asDouble(a['latest_balance']);
+              final balB = _asDouble(b['latest_balance']);
               return balB.compareTo(balA);
             });
 
@@ -199,8 +170,10 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                   );
                 }
 
-                final acc = filteredAccounts[index - 1] as Map;
-                final todayDiff = asDouble(acc['today_diff']);
+                final acc = Map<String, dynamic>.from(
+                  filteredAccounts[index - 1] as Map,
+                );
+                final todayDiff = _asDouble(acc['today_diff']);
                 final diffColor = todayDiff > 0
                     ? Colors.teal
                     : todayDiff < 0
@@ -208,7 +181,9 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                     : Colors.blueGrey;
                 final accountNumber = (acc['account_number'] ?? '').toString();
                 final accountName = (acc['name'] ?? '').toString();
+                final company = (acc['company'] ?? '').toString();
                 final memo = (acc['memo'] ?? '').toString();
+                final type = (acc['type'] ?? '').toString();
 
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(
@@ -217,26 +192,41 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                   ),
                   title: Row(
                     children: [
-                      Text(
-                        acc['company'] ?? '',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Colors.blueGrey,
+                      if (company.isNotEmpty)
+                        Text(
+                          company,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Colors.blueGrey,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
+                      if (company.isNotEmpty) const SizedBox(width: 8),
                       Expanded(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: () => _copyAccountNumber(accountNumber),
-                          child: Text(
-                            accountName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  accountName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 15,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (accountNumber.isNotEmpty) ...[
+                                const SizedBox(width: 4),
+                                const Icon(
+                                  Icons.copy,
+                                  size: 14,
+                                  color: Colors.grey,
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ),
@@ -249,15 +239,38 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: () => _copyAccountNumber(accountNumber),
-                        child: Text(
-                          accountNumber,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                            fontFamily: 'monospace',
-                          ),
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                accountNumber,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                  fontFamily: 'monospace',
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                            if (accountNumber.isNotEmpty) ...[
+                              const SizedBox(width: 4),
+                              const Icon(
+                                Icons.copy,
+                                size: 12,
+                                color: Colors.grey,
+                              ),
+                            ],
+                          ],
                         ),
                       ),
+                      if (type.isNotEmpty)
+                        Text(
+                          type,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.blueGrey.withValues(alpha: 0.7),
+                          ),
+                        ),
                       if (memo.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
@@ -267,161 +280,9 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                               fontSize: 11,
                               color: Colors.blueGrey.withValues(alpha: 0.8),
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      if (acc['type'] != null)
-                        Text(
-                          acc['type'],
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.blueGrey.withValues(alpha: 0.7),
-                          ),
-                          title: Row(
-                            children: [
-                              Text(
-                                company,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                  color: Colors.blueGrey,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () => copyAccountNumber(accountNumber),
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 2,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            accountName,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 15,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        if (accountNumber.isNotEmpty) ...[
-                                          const SizedBox(width: 4),
-                                          const Icon(
-                                            Icons.copy,
-                                            size: 14,
-                                            color: Colors.grey,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              InkWell(
-                                onTap: () => copyAccountNumber(accountNumber),
-                                borderRadius: BorderRadius.circular(4),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 2,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Flexible(
-                                        child: Text(
-                                          accountNumber,
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey,
-                                            fontFamily: 'monospace',
-                                            decoration:
-                                                TextDecoration.underline,
-                                          ),
-                                        ),
-                                      ),
-                                      if (accountNumber.isNotEmpty) ...[
-                                        const SizedBox(width: 4),
-                                        const Icon(
-                                          Icons.copy,
-                                          size: 12,
-                                          color: Colors.grey,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              if (type.isNotEmpty)
-                                Text(
-                                  type,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.blueGrey.withValues(
-                                      alpha: 0.7,
-                                    ),
-                                  ),
-                                ),
-                              if (memo.isNotEmpty)
-                                Text(
-                                  memo,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                            ],
-                          ),
-                          trailing: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text(
-                                currency.format(acc['latest_balance']),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14,
-                                  color: Colors.blueGrey[900],
-                                ),
-                              ),
-                              Text(
-                                formatSigned(todayDiff),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: diffColor,
-                                ),
-                              ),
-                              const Icon(
-                                Icons.chevron_right,
-                                size: 16,
-                                color: Colors.grey,
-                              ),
-                            ],
-                          ),
-                          onTap: () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => AccountHistoryPage(
-                                  accountNumber: accountNumber,
-                                  accountName: accountName.isNotEmpty
-                                      ? accountName
-                                      : company.isNotEmpty
-                                      ? company
-                                      : 'Account',
-                                ),
-                              ),
-                            );
-                          },
                         ),
                     ],
                   ),
@@ -430,7 +291,7 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        currency.format(acc['latest_balance']),
+                        currency.format(_asDouble(acc['latest_balance'])),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -459,12 +320,13 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                           accountNumber: accountNumber,
                           accountName: accountName.isNotEmpty
                               ? accountName
-                              : (acc['company'] ?? 'Account').toString(),
+                              : (company.isNotEmpty ? company : 'Account'),
                         ),
                       ),
                     );
-                  }),
-              ],
+                  },
+                );
+              },
             );
           },
           loading: () => ListView(
