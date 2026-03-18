@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/brand.dart';
 import '../dashboard/dashboard_page.dart';
 import '../dashboard/trend_page.dart';
@@ -31,7 +32,8 @@ class _HomePageState extends State<HomePage> {
         now.difference(_lastBackPressedAt!) <= const Duration(seconds: 2);
 
     if (shouldExit) {
-      return true;
+      await SystemNavigator.pop();
+      return false;
     }
 
     _lastBackPressedAt = now;
