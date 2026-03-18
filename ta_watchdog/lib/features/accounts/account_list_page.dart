@@ -1,14 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+
 import '../dashboard/dashboard_provider.dart';
 import 'account_history_page.dart';
 
-class AccountListPage extends ConsumerWidget {
+class AccountListPage extends ConsumerStatefulWidget {
   const AccountListPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AccountListPage> createState() => _AccountListPageState();
+}
+
+class _AccountListPageState extends ConsumerState<AccountListPage> {
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<AccountSelection?>(selectedAccountProvider, (previous, next) {
+      if (next == null || previous == next) return;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(selectedAccountProvider.notifier).state = null;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => AccountHistoryPage(
+              accountNumber: next.accountNumber,
+              accountName: next.accountName,
+            ),
+          ),
+        );
+      });
+    });
+
     final accountsAsync = ref.watch(accountsProvider);
     final currency = NumberFormat.simpleCurrency(
       locale: 'ko_KR',
@@ -24,8 +47,8 @@ class AccountListPage extends ConsumerWidget {
       final sign = value > 0
           ? '+'
           : value < 0
-          ? '-'
-          : '';
+              ? '-'
+              : '';
       return '$sign${currency.format(value.abs())}';
     }
 
@@ -74,8 +97,8 @@ class AccountListPage extends ConsumerWidget {
                 final diffColor = todayDiff > 0
                     ? Colors.teal
                     : todayDiff < 0
-                    ? Colors.redAccent
-                    : Colors.blueGrey;
+                        ? Colors.redAccent
+                        : Colors.blueGrey;
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(
                     vertical: 8,

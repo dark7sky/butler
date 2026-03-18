@@ -15,10 +15,10 @@ class TrendPage extends ConsumerStatefulWidget {
 }
 
 class _TrendPageState extends ConsumerState<TrendPage> {
-  String _chartType = 'day';
   bool _showDiff = false;
   late DateTime _endAt;
   late DateTime _startAt;
+  late String _chartType;
 
   final _compactCurrency = NumberFormat.compactCurrency(
     locale: 'ko_KR',
@@ -33,12 +33,22 @@ class _TrendPageState extends ConsumerState<TrendPage> {
   @override
   void initState() {
     super.initState();
+    _chartType = ref.read(trendChartTypeProvider);
     _endAt = DateTime.now();
     _startAt = _endAt.subtract(const Duration(hours: 24));
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String>(trendChartTypeProvider, (previous, next) {
+      if (previous == next) return;
+      setState(() {
+        _chartType = next;
+        _endAt = DateTime.now();
+        _applyQuickRange(_chartType);
+      });
+    });
+
     final chartDataAsync = ref.watch(
       chartDataProvider(
         ChartRequest(
@@ -193,6 +203,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
             onSelectionChanged: (Set<String> newSelection) {
               setState(() {
                 _chartType = newSelection.first;
+                ref.read(trendChartTypeProvider.notifier).state = _chartType;
                 _applyQuickRange(_chartType);
               });
             },
@@ -279,7 +290,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               child: chartDataAsync.when(
                 data: (data) => _buildNativeChart(data),
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (err, stack) => Center(child: Text('Chart Error: $err')),
+                error: (err, stack) => Center(child: Text('Error: $err')),
               ),
             ),
           ],
@@ -290,193 +301,125 @@ class _TrendPageState extends ConsumerState<TrendPage> {
 
   Widget _buildNativeChart(List<dynamic> rawData) {
     if (rawData.isEmpty) {
-      return const Center(child: Text('No data available'));
+      return const Center(child: Text('No data'));
     }
 
-    final spots = <FlSpot>[];
+    final points = <FlSpot>[];
+    final labels = <int, String>{};
     double minY = double.infinity;
-    double maxY = double.negativeInfinity;
+    double maxY = -double.infinity;
 
-    for (int i = 0; i < rawData.length; i++) {
-      final val = _asDouble(rawData[i]['balance']);
-      spots.add(FlSpot(i.toDouble(), val));
-      if (val < minY) minY = val;
-      if (val > maxY) maxY = val;
+    for (var i = 0; i < rawData.length; i++) {
+      final item = rawData[i] as Map<String, dynamic>;
+      final y = (item['balance'] as num?)?.toDouble() ?? 0;
+      points.add(FlSpot(i.toDouble(), y));
+      minY = math.min(minY, y);
+      maxY = math.max(maxY, y);
+      labels[i] = _formatXAxisLabel(item['date']?.toString() ?? '');
     }
 
-    double range = (maxY - minY).abs();
-    if (range == 0) {
-      range = math.max(1, maxY.abs() * 0.1);
-    }
-    final padding = range * 0.15;
-    minY = (minY - padding).floorToDouble();
-    maxY = (maxY + padding).ceilToDouble();
-    if (minY == maxY) {
-      minY -= 1;
-      maxY += 1;
-    }
-
-    final yInterval = ((maxY - minY) / 5)
-        .abs()
-        .clamp(1, double.infinity)
-        .toDouble();
-    final xInterval = (rawData.length / 5)
-        .ceilToDouble()
-        .clamp(1, double.infinity)
-        .toDouble();
+    final padding = ((maxY - minY).abs() * 0.15).clamp(1000, double.infinity);
 
     return LineChart(
       LineChartData(
+        minY: minY - padding,
+        maxY: maxY + padding,
         gridData: FlGridData(
           show: true,
-          drawVerticalLine: true,
-          horizontalInterval: yInterval,
-          verticalInterval: xInterval,
-          getDrawingHorizontalLine: (value) => FlLine(
-            color: Colors.blueGrey.withValues(alpha: 0.1),
-            strokeWidth: 1,
-          ),
-          getDrawingVerticalLine: (value) => FlLine(
-            color: Colors.blueGrey.withValues(alpha: 0.1),
-            strokeWidth: 1,
-          ),
+          drawVerticalLine: false,
+          horizontalInterval: _calculateInterval(minY, maxY),
         ),
         titlesData: FlTitlesData(
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
+              reservedSize: 28,
+              interval: _calculateBottomInterval(rawData.length),
               getTitlesWidget: (value, meta) {
-                final index = value.toInt();
-                if (index < 0 || index >= rawData.length) {
-                  return const SizedBox();
-                }
-
-                final interval = (rawData.length / 5).ceil();
-                if (index % interval != 0 && index != rawData.length - 1) {
-                  return const SizedBox();
-                }
-
-                final date = _parseDate(
-                  rawData[index]['date']?.toString() ?? '',
-                );
-                final label = _bottomLabel(date);
+                final label = labels[value.toInt()];
+                if (label == null) return const SizedBox.shrink();
                 return Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
+                  padding: const EdgeInsets.only(top: 8),
                   child: Text(
                     label,
                     style: const TextStyle(fontSize: 10, color: Colors.grey),
                   ),
                 );
               },
-              reservedSize: 22,
             ),
           ),
-          leftTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
-          ),
-          rightTitles: AxisTitles(
+          leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              getTitlesWidget: (value, meta) {
-                return Text(
-                  _compactCurrency.format(value),
-                  style: const TextStyle(fontSize: 9, color: Colors.grey),
-                );
-              },
-              reservedSize: 45,
+              reservedSize: 56,
+              interval: _calculateInterval(minY, maxY),
+              getTitlesWidget: (value, meta) => Text(
+                _compactCurrency.format(value),
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+              ),
             ),
-          ),
-          topTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: false),
           ),
         ),
         borderData: FlBorderData(show: false),
-        minY: minY,
-        maxY: maxY,
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (spots) => spots.map((spot) {
+              final item = rawData[spot.x.toInt()] as Map<String, dynamic>;
+              final date = item['date']?.toString() ?? '';
+              return LineTooltipItem(
+                '${_formatTooltipDate(date)}\n${_tooltipCurrency.format(spot.y)}',
+                const TextStyle(color: Colors.white),
+              );
+            }).toList(),
+          ),
+        ),
         lineBarsData: [
           LineChartBarData(
-            spots: spots,
+            spots: points,
             isCurved: true,
             color: Colors.blueAccent,
-            barWidth: 2,
-            isStrokeCapRound: true,
+            barWidth: 3,
             dotData: const FlDotData(show: false),
             belowBarData: BarAreaData(
               show: true,
-              color: Colors.blueAccent.withValues(alpha: 0.1),
+              color: Colors.blueAccent.withValues(alpha: 0.12),
             ),
           ),
         ],
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (touchedSpots) {
-              return touchedSpots.map((spot) {
-                final dateStr =
-                    rawData[spot.x.toInt()]['date']?.toString() ?? '';
-                final balance = spot.y;
-                final valueText = _showDiff
-                    ? _formatSigned(balance)
-                    : _tooltipCurrency.format(balance);
-                final dateLabel = DateFormat(
-                  'yyyy-MM-dd HH:mm',
-                ).format(_parseDate(dateStr));
-                return LineTooltipItem(
-                  '$dateLabel\n',
-                  const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  children: [
-                    TextSpan(
-                      text: valueText,
-                      style: const TextStyle(
-                        color: Colors.yellow,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                );
-              }).toList();
-            },
-          ),
-        ),
       ),
     );
   }
 
-  String _bottomLabel(DateTime date) {
-    if (_showDiff) {
-      if (_chartType == 'day') return DateFormat('MM/dd HH:mm').format(date);
-      if (_chartType == 'month') return DateFormat('MM/dd').format(date);
-      return DateFormat('yyyy/MM').format(date);
-    }
-
+  String _formatXAxisLabel(String raw) {
+    final date = DateTime.tryParse(raw)?.toLocal();
+    if (date == null) return '';
     if (_chartType == 'day') return DateFormat('HH:mm').format(date);
     if (_chartType == 'month') return DateFormat('MM/dd').format(date);
     return DateFormat('yyyy/MM').format(date);
   }
 
-  double _asDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  String _formatTooltipDate(String raw) {
+    final date = DateTime.tryParse(raw)?.toLocal();
+    if (date == null) return raw;
+    return DateFormat('yyyy-MM-dd HH:mm').format(date);
   }
 
-  DateTime _parseDate(String input) {
-    final parsed = DateTime.tryParse(input);
-    if (parsed != null) return parsed;
-    try {
-      return DateFormat('yyyy-MM-dd HH:mm:ss').parse(input);
-    } catch (_) {
-      return DateTime.now();
-    }
+  double _calculateInterval(double minY, double maxY) {
+    final range = (maxY - minY).abs();
+    if (range <= 0) return 1000;
+    return math.max(range / 4, 1000);
   }
 
-  String _formatSigned(double value) {
-    final sign = value > 0
-        ? '+'
-        : value < 0
-        ? '-'
-        : '';
-    return '$sign${_tooltipCurrency.format(value.abs())}';
+  static double _calculateBottomInterval(int count) {
+    if (count <= 6) return 1;
+    if (count <= 12) return 2;
+    if (count <= 24) return 4;
+    return (count / 6).ceilToDouble();
   }
 }

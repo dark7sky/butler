@@ -1,29 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/brand.dart';
+import '../accounts/account_list_page.dart';
+import '../chat/chat_page.dart';
+import '../dashboard/dashboard_provider.dart';
 import '../dashboard/dashboard_page.dart';
 import '../dashboard/trend_page.dart';
 import '../manual_inputs/manual_inputs_page.dart';
-import '../chat/chat_page.dart';
-import '../accounts/account_list_page.dart';
 
-class HomePage extends StatefulWidget {
+class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  ConsumerState<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  int _currentIndex = 0;
+class _HomePageState extends ConsumerState<HomePage> {
   DateTime? _lastBackPressedAt;
 
-  final List<Widget> _pages = [
-    const DashboardPage(),
-    const TrendPage(),
-    const AccountListPage(), // Added Table Page
-    const ManualInputsPage(),
-    const ChatPage(),
+  final List<Widget> _pages = const [
+    DashboardPage(),
+    TrendPage(),
+    AccountListPage(),
+    ManualInputsPage(),
+    ChatPage(),
   ];
 
   Future<bool> _onWillPop() async {
@@ -52,6 +54,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final currentIndex = ref.watch(homeTabProvider);
+
     return WillPopScope(
       onWillPop: _onWillPop,
       child: Scaffold(
@@ -75,10 +79,11 @@ class _HomePageState extends State<HomePage> {
           centerTitle: true,
           elevation: 0,
         ),
-        body: _pages[_currentIndex],
+        body: _pages[currentIndex],
         bottomNavigationBar: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: (index) => setState(() => _currentIndex = index),
+          selectedIndex: currentIndex,
+          onDestinationSelected: (index) =>
+              ref.read(homeTabProvider.notifier).state = index,
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.dashboard_outlined),
