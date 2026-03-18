@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
+
 import 'chat_provider.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
@@ -24,7 +27,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   }
 
   void _scrollToBottom() {
-    // A slight delay to allow the ListView to build the new item
     Future.delayed(const Duration(milliseconds: 100), () {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -44,24 +46,39 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       }
     });
 
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final chatState = ref.watch(chatProvider);
     final messages = chatState.messages;
-    final isGenerating = chatState.isLoading;
 
     return Column(
       children: [
         Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.all(16),
-            itemCount: messages.length,
-            itemBuilder: (context, index) {
-              final msg = messages[index];
-              return _buildChatBubble(msg);
+          child: RefreshIndicator(
+            onRefresh: () async {
+              await ref.read(chatProvider.notifier).reloadHistory();
+              if (mounted) {
+                _scrollToBottom();
+              }
             },
+            child: ListView.builder(
+              controller: _scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              itemCount: messages.isEmpty ? 1 : messages.length,
+              itemBuilder: (context, index) {
+                if (messages.isEmpty) {
+                  return const SizedBox(
+                    height: 300,
+                    child: Center(child: Text('아래로 당겨 대화를 새로고침하세요.')),
+                  );
+                }
+                return _buildChatBubble(messages[index], isDark);
+              },
+            ),
           ),
         ),
-        _buildInputArea(isGenerating),
+        _buildInputArea(chatState.isLoading, isDark),
       ],
     );
   }
@@ -73,75 +90,113 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     super.dispose();
   }
 
-  Widget _buildChatBubble(ChatMessage msg) {
+  Widget _buildChatBubble(ChatMessage msg, bool isDark) {
     final isUser = msg.isUser;
     final isLoadingMsg = msg.isLoading;
+    final bubbleColor = isUser
+        ? (isDark ? const Color(0xFF2D3C5A) : Colors.blueGrey)
+        : (isDark ? const Color(0xFF1A2742) : Colors.grey[200]!);
+    final textColor = msg.isError
+        ? Colors.redAccent
+        : (isDark ? Colors.white : (isUser ? Colors.white : Colors.black87));
+
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.all(12),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-        decoration: BoxDecoration(
-          color: isUser ? Colors.blueGrey : Colors.grey[200],
-          borderRadius: BorderRadius.circular(16).copyWith(
-            bottomLeft: isUser ? const Radius.circular(16) : Radius.zero,
-            bottomRight: isUser ? Radius.zero : const Radius.circular(16),
+      child: GestureDetector(
+        onLongPress: isLoadingMsg
+            ? null
+            : () async {
+                await Clipboard.setData(ClipboardData(text: msg.text));
+                if (!mounted) return;
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('메시지를 복사했습니다.')));
+              },
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.all(12),
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.75,
           ),
-        ),
-        child: isLoadingMsg
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Column(
-                crossAxisAlignment:
-                    isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                children: [
-                  MarkdownBody(
-                    data: msg.text,
-                    styleSheet: MarkdownStyleSheet(
-                      p: TextStyle(
-                        color: msg.isError
-                            ? Colors.redAccent
-                            : (isUser ? Colors.white : Colors.black87),
-                      ),
-                      code: TextStyle(
-                        backgroundColor:
-                            isUser ? Colors.blueGrey[700] : Colors.grey[300],
-                        color: isUser ? Colors.white : Colors.black87,
-                      ),
-                    ),
-                  ),
-                  if (msg.canRetry && msg.retryQuery != null) ...[
-                    const SizedBox(height: 6),
-                    GestureDetector(
-                      onTap: () => ref
-                          .read(chatProvider.notifier)
-                          .retryMessage(msg.retryQuery!),
-                      child: Text(
-                        'Retry (5 min)',
-                        style: TextStyle(
-                          color: isUser ? Colors.white : Colors.blueGrey[700],
-                          decoration: TextDecoration.underline,
-                          fontWeight: FontWeight.w600,
+          decoration: BoxDecoration(
+            color: bubbleColor,
+            borderRadius: BorderRadius.circular(16).copyWith(
+              bottomLeft: isUser ? const Radius.circular(16) : Radius.zero,
+              bottomRight: isUser ? Radius.zero : const Radius.circular(16),
+            ),
+          ),
+          child: isLoadingMsg
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Column(
+                  crossAxisAlignment: isUser
+                      ? CrossAxisAlignment.end
+                      : CrossAxisAlignment.start,
+                  children: [
+                    MarkdownBody(
+                      data: msg.text,
+                      styleSheet: MarkdownStyleSheet(
+                        p: TextStyle(color: textColor),
+                        code: TextStyle(
+                          backgroundColor: isDark
+                              ? const Color(0xFF314366)
+                              : (isUser
+                                    ? Colors.blueGrey[700]
+                                    : Colors.grey[300]),
+                          color: textColor,
                         ),
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Text(
+                      DateFormat('MM/dd HH:mm').format(msg.createdAt),
+                      style: TextStyle(
+                        color: (isDark ? Colors.white70 : Colors.black54),
+                        fontSize: 11,
+                      ),
+                    ),
+                    if (msg.canRetry && msg.retryQuery != null) ...[
+                      const SizedBox(height: 6),
+                      GestureDetector(
+                        onTap: () => ref
+                            .read(chatProvider.notifier)
+                            .retryMessage(msg.retryQuery!),
+                        child: Text(
+                          'Retry (5 min)',
+                          style: TextStyle(
+                            color: isDark
+                                ? Colors.lightBlue[200]
+                                : (isUser
+                                      ? Colors.white
+                                      : Colors.blueGrey[700]),
+                            decoration: TextDecoration.underline,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
-                ],
-              ),
+                ),
+        ),
       ),
     );
   }
 
-  Widget _buildInputArea(bool isGenerating) {
+  Widget _buildInputArea(bool isGenerating, bool isDark) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, -1))],
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 4,
+            offset: Offset(0, -1),
+          ),
+        ],
       ),
       child: SafeArea(
         child: Row(
@@ -150,16 +205,24 @@ class _ChatPageState extends ConsumerState<ChatPage> {
               child: TextField(
                 controller: _textController,
                 enabled: !isGenerating,
+                style: TextStyle(color: isDark ? Colors.white : Colors.black87),
                 decoration: InputDecoration(
                   hintText: 'Ask your WatchDog...',
+                  hintStyle: TextStyle(
+                    color: isDark ? Colors.white60 : Colors.grey[700],
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide.none,
                   ),
                   filled: true,
-                  fillColor: Colors.grey[200],
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  fillColor: isDark
+                      ? const Color(0xFF1A2742)
+                      : Colors.grey[200],
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 10,
+                  ),
                 ),
                 onSubmitted: (_) => _sendMessage(),
               ),

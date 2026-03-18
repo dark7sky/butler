@@ -260,6 +260,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     required Color color,
     Widget? trailing,
   }) {
+    final isDarkTheme = Theme.of(context).brightness == Brightness.dark;
+
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -291,7 +293,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 style: TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.bold,
-                  color: Colors.blueGrey[900],
+                  color: isDarkTheme ? Colors.white : Colors.blueGrey[900],
                 ),
               ),
             ),

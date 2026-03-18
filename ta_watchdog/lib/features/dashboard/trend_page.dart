@@ -25,8 +25,10 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     symbol: '',
     decimalDigits: 0,
   );
-  final _tooltipCurrency =
-      NumberFormat.simpleCurrency(locale: 'ko_KR', decimalDigits: 0);
+  final _tooltipCurrency = NumberFormat.simpleCurrency(
+    locale: 'ko_KR',
+    decimalDigits: 0,
+  );
 
   @override
   void initState() {
@@ -49,15 +51,28 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     );
 
     return Scaffold(
-      body: ListView(
-        padding: const EdgeInsets.all(16.0),
-        children: [
-          _buildDateTimeFilter(context),
-          const SizedBox(height: 12),
-          _buildChartSelector(),
-          const SizedBox(height: 16),
-          _buildChartContainer(chartDataAsync),
-        ],
+      body: RefreshIndicator(
+        onRefresh: () => ref.refresh(
+          chartDataProvider(
+            ChartRequest(
+              chartType: _chartType,
+              startAt: _startAt,
+              endAt: _endAt,
+              diffMode: _showDiff,
+            ),
+          ).future,
+        ),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16.0),
+          children: [
+            _buildDateTimeFilter(context),
+            const SizedBox(height: 12),
+            _buildChartSelector(),
+            const SizedBox(height: 16),
+            _buildChartContainer(chartDataAsync),
+          ],
+        ),
       ),
     );
   }
@@ -168,6 +183,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       children: [
         Expanded(
           child: SegmentedButton<String>(
+            showSelectedIcon: false,
             segments: [
               ButtonSegment(value: 'day', label: Text(labels['day']!)),
               ButtonSegment(value: 'month', label: Text(labels['month']!)),
@@ -340,7 +356,9 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                   return const SizedBox();
                 }
 
-                final date = _parseDate(rawData[index]['date']?.toString() ?? '');
+                final date = _parseDate(
+                  rawData[index]['date']?.toString() ?? '',
+                );
                 final label = _bottomLabel(date);
                 return Padding(
                   padding: const EdgeInsets.only(top: 8.0),
@@ -353,7 +371,9 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               reservedSize: 22,
             ),
           ),
-          leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
           rightTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
@@ -366,7 +386,9 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               reservedSize: 45,
             ),
           ),
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
         ),
         borderData: FlBorderData(show: false),
         minY: minY,
@@ -389,13 +411,15 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           touchTooltipData: LineTouchTooltipData(
             getTooltipItems: (touchedSpots) {
               return touchedSpots.map((spot) {
-                final dateStr = rawData[spot.x.toInt()]['date']?.toString() ?? '';
+                final dateStr =
+                    rawData[spot.x.toInt()]['date']?.toString() ?? '';
                 final balance = spot.y;
                 final valueText = _showDiff
                     ? _formatSigned(balance)
                     : _tooltipCurrency.format(balance);
-                final dateLabel =
-                    DateFormat('yyyy-MM-dd HH:mm').format(_parseDate(dateStr));
+                final dateLabel = DateFormat(
+                  'yyyy-MM-dd HH:mm',
+                ).format(_parseDate(dateStr));
                 return LineTooltipItem(
                   '$dateLabel\n',
                   const TextStyle(
@@ -448,7 +472,11 @@ class _TrendPageState extends ConsumerState<TrendPage> {
   }
 
   String _formatSigned(double value) {
-    final sign = value > 0 ? '+' : value < 0 ? '-' : '';
+    final sign = value > 0
+        ? '+'
+        : value < 0
+        ? '-'
+        : '';
     return '$sign${_tooltipCurrency.format(value.abs())}';
   }
 }
