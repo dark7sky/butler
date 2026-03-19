@@ -29,6 +29,15 @@ class _HomePageState extends ConsumerState<HomePage> {
   ];
 
   Future<bool> _onWillPop() async {
+    final currentIndex = ref.read(homeTabProvider);
+
+    if (currentIndex != 0) {
+      ref.read(homeTabProvider.notifier).state = 0;
+      _lastBackPressedAt = null;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      return false;
+    }
+
     final now = DateTime.now();
     final shouldExit = _lastBackPressedAt != null &&
         now.difference(_lastBackPressedAt!) <= const Duration(seconds: 2);
