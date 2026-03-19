@@ -16,9 +16,28 @@ class AccountListPage extends ConsumerStatefulWidget {
 class _AccountListPageState extends ConsumerState<AccountListPage> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _isOpeningSelectedAccount = false;
+  late final ProviderSubscription<AccountSelection?> _selectedAccountSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _selectedAccountSubscription = ref.listenManual<AccountSelection?>(selectedAccountProvider, (
+      previous,
+      next,
+    ) {
+      _handleSelectedAccount(next);
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleSelectedAccount(ref.read(selectedAccountProvider));
+    });
+  }
 
   @override
   void dispose() {
+    _selectedAccountSubscription.close();
     _searchController.dispose();
     super.dispose();
   }
@@ -53,25 +72,34 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
     return double.tryParse(value?.toString() ?? '') ?? 0.0;
   }
 
+  void _handleSelectedAccount(AccountSelection? selection) {
+    if (selection == null || _isOpeningSelectedAccount || !mounted) return;
+
+    _isOpeningSelectedAccount = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        _isOpeningSelectedAccount = false;
+        return;
+      }
+
+      ref.read(selectedAccountProvider.notifier).state = null;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => AccountHistoryPage(
+            accountNumber: selection.accountNumber,
+            accountName: selection.accountName,
+          ),
+        ),
+      );
+
+      if (mounted) {
+        _isOpeningSelectedAccount = false;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    ref.listen<AccountSelection?>(selectedAccountProvider, (previous, next) {
-      if (next == null || previous == next) return;
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ref.read(selectedAccountProvider.notifier).state = null;
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (context) => AccountHistoryPage(
-              accountNumber: next.accountNumber,
-              accountName: next.accountName,
-            ),
-          ),
-        );
-      });
-    });
-
     final accountsAsync = ref.watch(accountsProvider);
     final currency = NumberFormat.simpleCurrency(
       locale: 'ko_KR',
