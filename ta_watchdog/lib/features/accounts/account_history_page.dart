@@ -328,12 +328,14 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     final todayStart = DateTime(now.year, now.month, now.day);
     double? todayLatest;
     double? todayEarliest;
+    double? yesterdayLatest;
 
     for (final entry in history) {
       final date = _parseDate(entry['date']?.toString() ?? '');
       final balance = _asDouble(entry['balance']);
 
       if (date.isBefore(todayStart)) {
+        yesterdayLatest ??= balance;
         break;
       }
 
@@ -341,8 +343,10 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
       todayEarliest = balance;
     }
 
-    if (todayLatest == null || todayEarliest == null) return null;
-    return todayLatest - todayEarliest;
+    if (todayLatest == null) return null;
+    final baseline = yesterdayLatest ?? todayEarliest;
+    if (baseline == null) return null;
+    return todayLatest - baseline;
   }
 
   double? _calculateMonthlyChange(List<dynamic> history) {

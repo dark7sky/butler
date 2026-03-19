@@ -84,15 +84,19 @@ def list_accounts(db: Session) -> list[dict]:
     if ttl > 0 and (time.monotonic() - _ACCOUNT_CACHE["ts"]) < ttl:
         return list(_ACCOUNT_CACHE["accounts"])
 
-    rows = db.execute(
-        text(
-            """
+    rows = (
+        db.execute(
+            text(
+                """
             SELECT account_key, company, type, name, memo, is_special, is_active
             FROM accounts
             ORDER BY account_key
             """
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
     accounts = [dict(row) for row in rows]
     _ACCOUNT_CACHE["ts"] = time.monotonic()
     _ACCOUNT_CACHE["accounts"] = accounts
@@ -108,9 +112,10 @@ def account_exists(db: Session, account_key: str) -> bool:
 
 
 def fetch_account_snapshot_rows(db: Session, day_start_utc: datetime) -> list[dict]:
-    rows = db.execute(
-        text(
-            """
+    rows = (
+        db.execute(
+            text(
+                """
             SELECT
                 a.account_key,
                 a.company,
@@ -121,6 +126,7 @@ def fetch_account_snapshot_rows(db: Session, day_start_utc: datetime) -> list[di
                 a.is_active,
                 latest.balance AS latest_balance,
                 today.balance AS today_balance,
+                earliest_today.balance AS earliest_today_balance,
                 yesterday.balance AS yesterday_balance
             FROM accounts a
             LEFT JOIN LATERAL (
@@ -142,15 +148,26 @@ def fetch_account_snapshot_rows(db: Session, day_start_utc: datetime) -> list[di
                 SELECT balance
                 FROM account_balance_history h
                 WHERE h.account_key = a.account_key
+                  AND h.recorded_at >= :day_start
+                ORDER BY h.recorded_at ASC
+                LIMIT 1
+            ) earliest_today ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT balance
+                FROM account_balance_history h
+                WHERE h.account_key = a.account_key
                   AND h.recorded_at < :day_start
                 ORDER BY h.recorded_at DESC
                 LIMIT 1
             ) yesterday ON TRUE
             ORDER BY a.account_key
             """
-        ),
-        {"day_start": day_start_utc},
-    ).mappings().all()
+            ),
+            {"day_start": day_start_utc},
+        )
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]
 
 
@@ -163,59 +180,81 @@ def fetch_summary_rows(db: Session, requested: str, limit: int) -> list[dict]:
     limit = max(1, min(limit, 200))
 
     if table_name == "portfolio_balance_history":
-        rows = db.execute(
-            text(
-                """
+        rows = (
+            db.execute(
+                text(
+                    """
                 SELECT recorded_at AS point_date, balance
                 FROM portfolio_balance_history
                 ORDER BY recorded_at DESC
                 LIMIT :limit
                 """
-            ),
-            {"limit": limit},
-        ).mappings().all()
+                ),
+                {"limit": limit},
+            )
+            .mappings()
+            .all()
+        )
         return [
-            {"date": serialize_timestamp(row["point_date"]), "balance": float(row["balance"])}
+            {
+                "date": serialize_timestamp(row["point_date"]),
+                "balance": float(row["balance"]),
+            }
             for row in rows
         ]
 
     if table_name == "portfolio_daydiff":
-        rows = db.execute(
-            text(
-                """
+        rows = (
+            db.execute(
+                text(
+                    """
                 SELECT balance_date AS point_date, balance
                 FROM portfolio_daydiff
                 ORDER BY balance_date DESC
                 LIMIT :limit
                 """
-            ),
-            {"limit": limit},
-        ).mappings().all()
+                ),
+                {"limit": limit},
+            )
+            .mappings()
+            .all()
+        )
         return [
-            {"date": serialize_date(row["point_date"]), "balance": float(row["balance"])}
+            {
+                "date": serialize_date(row["point_date"]),
+                "balance": float(row["balance"]),
+            }
             for row in rows
         ]
 
     if table_name == "portfolio_monthdiff":
-        rows = db.execute(
-            text(
-                """
+        rows = (
+            db.execute(
+                text(
+                    """
                 SELECT balance_date AS point_date, balance
                 FROM portfolio_monthdiff
                 ORDER BY balance_date DESC
                 LIMIT :limit
                 """
-            ),
-            {"limit": limit},
-        ).mappings().all()
+                ),
+                {"limit": limit},
+            )
+            .mappings()
+            .all()
+        )
         return [
-            {"date": serialize_date(row["point_date"]), "balance": float(row["balance"])}
+            {
+                "date": serialize_date(row["point_date"]),
+                "balance": float(row["balance"]),
+            }
             for row in rows
         ]
 
-    rows = db.execute(
-        text(
-            """
+    rows = (
+        db.execute(
+            text(
+                """
             WITH ordered AS (
                 SELECT
                     recorded_at,
@@ -227,10 +266,16 @@ def fetch_summary_rows(db: Session, requested: str, limit: int) -> list[dict]:
             ORDER BY point_date DESC
             LIMIT :limit
             """
-        ),
-        {"limit": limit},
-    ).mappings().all()
+            ),
+            {"limit": limit},
+        )
+        .mappings()
+        .all()
+    )
     return [
-        {"date": serialize_timestamp(row["point_date"]), "balance": float(row["balance"])}
+        {
+            "date": serialize_timestamp(row["point_date"]),
+            "balance": float(row["balance"]),
+        }
         for row in rows
     ]
