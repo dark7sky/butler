@@ -24,18 +24,30 @@ _ACCOUNTS_CACHE = {"ts": 0.0, "data": None}
 _ACCOUNTS_CACHE_TTL_SECONDS = 10
 
 
+def _resolve_today_diff(row: dict) -> float:
+    today_balance = row["today_balance"]
+    if today_balance is None:
+        return 0.0
+
+    baseline = row["yesterday_balance"]
+    if baseline is None:
+        baseline = row.get("earliest_today_balance")
+
+    return float(today_balance) - float(baseline or 0)
+
+
 def _build_account_payload(rows: list[dict]) -> list[dict]:
     payload = []
     for row in rows:
         latest_balance = float(row["latest_balance"] or 0)
-        yesterday_balance = float(row["yesterday_balance"] or 0)
-        today_balance = row["today_balance"]
-        today_diff = 0.0 if today_balance is None else float(today_balance) - yesterday_balance
+        today_diff = _resolve_today_diff(row)
 
         company = row["company"] or (row["account_key"] if row["is_special"] else "")
         account_type = row["type"] or ("Special" if row["is_special"] else "")
         name = row["name"] or row["account_key"]
-        memo = row["memo"] or ("Auto-detected special account" if row["is_special"] else "")
+        memo = row["memo"] or (
+            "Auto-detected special account" if row["is_special"] else ""
+        )
 
         payload.append(
             {
@@ -61,12 +73,18 @@ def _parse_request_datetime(value: str | None, default: datetime) -> datetime:
     return parsed.astimezone(get_app_timezone())
 
 
-def _group_balance_rows(rows: list[tuple], chart_type: str) -> list[dict[str, float | str]]:
+def _group_balance_rows(
+    rows: list[tuple], chart_type: str
+) -> list[dict[str, float | str]]:
     grouped: dict[datetime, float] = {}
     timezone = get_app_timezone()
 
     for recorded_at, balance in rows:
-        local_stamp = recorded_at.astimezone(timezone) if recorded_at.tzinfo else recorded_at.replace(tzinfo=timezone)
+        local_stamp = (
+            recorded_at.astimezone(timezone)
+            if recorded_at.tzinfo
+            else recorded_at.replace(tzinfo=timezone)
+        )
         if chart_type == "day":
             bucket = local_stamp.replace(minute=0, second=0, microsecond=0)
         else:
@@ -102,11 +120,7 @@ async def get_dashboard_summary(
     try:
         rows = fetch_account_snapshot_rows(db, day_start)
         for row in rows:
-            today_balance = row["today_balance"]
-            if today_balance is None:
-                continue
-            yesterday_balance = float(row["yesterday_balance"] or 0)
-            diff_value = float(today_balance) - yesterday_balance
+            diff_value = _resolve_today_diff(row)
             if diff_value == 0:
                 continue
             diffs.append(
@@ -115,10 +129,14 @@ async def get_dashboard_summary(
                     "account": row["account_key"],
                     "info": {
                         "account_number": row["account_key"],
-                        "company": row["company"] or (row["account_key"] if row["is_special"] else ""),
+                        "company": row["company"]
+                        or (row["account_key"] if row["is_special"] else ""),
                         "type": row["type"] or ("Special" if row["is_special"] else ""),
                         "name": row["name"] or row["account_key"],
-                        "memo": row["memo"] or ("Auto-detected special account" if row["is_special"] else ""),
+                        "memo": row["memo"]
+                        or (
+                            "Auto-detected special account" if row["is_special"] else ""
+                        ),
                     },
                 }
             )
@@ -135,7 +153,11 @@ async def get_dashboard_summary(
             ),
             {"today_date": today_date},
         ).scalar()
-        today_diff = float(diff_res) if diff_res is not None else sum(item["diff"] for item in diffs)
+        today_diff = (
+            float(diff_res)
+            if diff_res is not None
+            else sum(item["diff"] for item in diffs)
+        )
 
         bal_now = db.execute(
             text(
@@ -179,7 +201,9 @@ async def get_dashboard_summary(
             ),
             {"month_start": month_start},
         ).scalar()
-        month_sums[1] = float(this_mon_res) if this_mon_res is not None else daily_sums[3]
+        month_sums[1] = (
+            float(this_mon_res) if this_mon_res is not None else daily_sums[3]
+        )
 
         results = db.execute(
             text(
@@ -256,8 +280,7 @@ async def get_dashboard_chart_data(
                 },
             ).fetchall()
             data = [
-                {"date": row[0].isoformat(), "balance": float(row[1])}
-                for row in rows
+                {"date": row[0].isoformat(), "balance": float(row[1])} for row in rows
             ]
             return {"status": "success", "data": data}
 
@@ -303,7 +326,10 @@ async def get_all_accounts(
     try:
         now_tick = time.monotonic()
         cached = _ACCOUNTS_CACHE.get("data")
-        if cached is not None and (now_tick - _ACCOUNTS_CACHE["ts"]) < _ACCOUNTS_CACHE_TTL_SECONDS:
+        if (
+            cached is not None
+            and (now_tick - _ACCOUNTS_CACHE["ts"]) < _ACCOUNTS_CACHE_TTL_SECONDS
+        ):
             return {"status": "success", "data": cached}
 
         day_start = to_utc(local_day_start())
