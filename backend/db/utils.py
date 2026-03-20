@@ -279,3 +279,85 @@ def fetch_summary_rows(db: Session, requested: str, limit: int) -> list[dict]:
         }
         for row in rows
     ]
+
+
+
+def rebuild_portfolio_rows(db: Session) -> list[tuple[datetime, int]]:
+    rows = (
+        db.execute(
+            text(
+                """
+                SELECT account_key, recorded_at, balance
+                FROM account_balance_history
+                ORDER BY recorded_at ASC, account_key ASC
+                """
+            )
+        )
+        .mappings()
+        .all()
+    )
+
+    latest_by_account: dict[str, int] = {}
+    total = 0
+    current_ts: datetime | None = None
+    portfolio_rows: list[tuple[datetime, int]] = []
+
+    for row in rows:
+        account_key = str(row['account_key'])
+        recorded_at = row['recorded_at']
+        balance = int(row['balance'])
+        if current_ts is not None and recorded_at != current_ts:
+            portfolio_rows.append((current_ts, total))
+        previous = latest_by_account.get(account_key, 0)
+        total += balance - previous
+        latest_by_account[account_key] = balance
+        current_ts = recorded_at
+
+    if current_ts is not None:
+        portfolio_rows.append((current_ts, total))
+
+    return portfolio_rows
+
+
+def build_portfolio_daydiff_rows(
+    portfolio_rows: list[tuple[datetime, int]],
+) -> list[tuple[date, int]]:
+    day_totals: dict[date, int] = {}
+    for recorded_at, balance in portfolio_rows:
+        local_date = recorded_at.astimezone(get_app_timezone()).date()
+        day_totals[local_date] = int(balance)
+
+    ordered = sorted(day_totals.items())
+    diff_rows: list[tuple[date, int]] = []
+    previous_total: int | None = None
+    for balance_date, total in ordered:
+        if previous_total is None:
+            previous_total = total
+            continue
+        diff_rows.append((balance_date, total - previous_total))
+        previous_total = total
+    return diff_rows
+
+
+def build_portfolio_monthdiff_rows(
+    portfolio_rows: list[tuple[datetime, int]],
+) -> list[tuple[date, int]]:
+    month_totals: dict[tuple[int, int], int] = {}
+    month_labels: dict[tuple[int, int], date] = {}
+    for recorded_at, balance in portfolio_rows:
+        local_stamp = recorded_at.astimezone(get_app_timezone())
+        month_key = (local_stamp.year, local_stamp.month)
+        month_totals[month_key] = int(balance)
+        month_labels[month_key] = local_stamp.date()
+
+    ordered_keys = sorted(month_totals)
+    diff_rows: list[tuple[date, int]] = []
+    previous_total: int | None = None
+    for month_key in ordered_keys:
+        total = month_totals[month_key]
+        if previous_total is None:
+            previous_total = total
+            continue
+        diff_rows.append((month_labels[month_key], total - previous_total))
+        previous_total = total
+    return diff_rows

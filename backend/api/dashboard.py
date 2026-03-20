@@ -2,7 +2,9 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -10,6 +12,9 @@ from api.deps import get_current_user, get_db
 from db.utils import (
     account_exists,
     fetch_account_snapshot_rows,
+    rebuild_portfolio_rows,
+    build_portfolio_daydiff_rows,
+    build_portfolio_monthdiff_rows,
     get_app_timezone,
     local_day_start,
     local_month_start,
@@ -19,6 +24,11 @@ from db.utils import (
 )
 
 router = APIRouter()
+
+
+class AccountHistoryDeleteRequest(BaseModel):
+    selected_dates: list[str]
+
 
 _ACCOUNTS_CACHE = {"ts": 0.0, "data": None}
 _ACCOUNTS_CACHE_TTL_SECONDS = 10
@@ -61,6 +71,54 @@ def _build_account_payload(rows: list[dict]) -> list[dict]:
             }
         )
     return payload
+
+
+
+
+def _refresh_portfolio_tables(db: Session) -> None:
+    portfolio_rows = rebuild_portfolio_rows(db)
+    daydiff_rows = build_portfolio_daydiff_rows(portfolio_rows)
+    monthdiff_rows = build_portfolio_monthdiff_rows(portfolio_rows)
+
+    db.execute(text("DELETE FROM portfolio_balance_history"))
+    db.execute(text("DELETE FROM portfolio_daydiff"))
+    db.execute(text("DELETE FROM portfolio_monthdiff"))
+
+    for recorded_at, balance in portfolio_rows:
+        db.execute(
+            text(
+                """
+                INSERT INTO portfolio_balance_history (recorded_at, balance)
+                VALUES (:recorded_at, :balance)
+                """
+            ),
+            {"recorded_at": recorded_at, "balance": balance},
+        )
+
+    for balance_date, balance in daydiff_rows:
+        db.execute(
+            text(
+                """
+                INSERT INTO portfolio_daydiff (balance_date, balance)
+                VALUES (:balance_date, :balance)
+                """
+            ),
+            {"balance_date": balance_date, "balance": balance},
+        )
+
+    for balance_date, balance in monthdiff_rows:
+        db.execute(
+            text(
+                """
+                INSERT INTO portfolio_monthdiff (balance_date, balance)
+                VALUES (:balance_date, :balance)
+                """
+            ),
+            {"balance_date": balance_date, "balance": balance},
+        )
+
+    _ACCOUNTS_CACHE["ts"] = 0.0
+    _ACCOUNTS_CACHE["data"] = None
 
 
 def _parse_request_datetime(value: str | None, default: datetime) -> datetime:
@@ -376,3 +434,60 @@ async def get_account_history(
     except Exception as exc:
         print(f"DEBUG: Error in get_account_history: {exc}")
         return {"status": "error", "message": str(exc), "data": []}
+
+
+@router.delete("/accounts/{account_number}/history")
+async def delete_account_history(
+    account_number: str,
+    payload: AccountHistoryDeleteRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        if not account_exists(db, account_number):
+            raise HTTPException(status_code=404, detail="Account not found")
+
+        selected_dates = list(dict.fromkeys(payload.selected_dates))
+        if not selected_dates:
+            raise HTTPException(status_code=400, detail="No history rows selected")
+
+        parsed_dates = []
+        for raw in selected_dates:
+            parsed = datetime.fromisoformat(raw)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=get_app_timezone())
+            else:
+                parsed = parsed.astimezone(get_app_timezone())
+            parsed_dates.append(parsed)
+
+        result = db.execute(
+            text(
+                """
+                DELETE FROM account_balance_history
+                WHERE account_key = :account_key
+                  AND recorded_at = :recorded_at
+                """
+            ),
+            [
+                {
+                    "account_key": account_number,
+                    "recorded_at": recorded_at,
+                }
+                for recorded_at in parsed_dates
+            ],
+        )
+
+        deleted_count = result.rowcount or 0
+        if deleted_count == 0:
+            db.rollback()
+            raise HTTPException(status_code=404, detail="Selected history rows not found")
+
+        _refresh_portfolio_tables(db)
+        db.commit()
+        return {"status": "success", "deleted": deleted_count}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        print(f"DEBUG: Error in delete_account_history: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
