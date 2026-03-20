@@ -40,6 +40,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   Widget build(BuildContext context) {
     final accountsAsync = ref.watch(accountsProvider);
     final historyAsync = ref.watch(accountHistoryProvider(_request));
+    final loadedHistory = historyAsync.asData?.value;
 
     return Scaffold(
       appBar: AppBar(
@@ -57,9 +58,9 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
             IconButton(
               icon: const Icon(Icons.select_all),
               tooltip: 'Select all',
-              onPressed: historyAsync.valueOrNull == null || _groupByDay
+              onPressed: loadedHistory == null || _groupByDay
                   ? null
-                  : () => _selectAllVisible(historyAsync.valueOrNull!),
+                  : () => _selectAllVisible(loadedHistory),
             ),
             IconButton(
               icon: _isDeleting

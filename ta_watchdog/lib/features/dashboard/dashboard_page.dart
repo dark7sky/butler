@@ -319,7 +319,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: const TextStyle(fontSize: 10, color: Colors.grey),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
           ],
