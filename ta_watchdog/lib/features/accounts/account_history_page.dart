@@ -21,6 +21,9 @@ class AccountHistoryPage extends ConsumerStatefulWidget {
 class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   int _limit = 50;
   bool _groupByDay = false;
+  bool _selectionMode = false;
+  bool _isDeleting = false;
+  final Set<String> _selectedHistoryIds = <String>{};
   final _currency = NumberFormat.simpleCurrency(
     locale: 'ko_KR',
     decimalDigits: 0,
@@ -28,35 +31,62 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   final _dateFormat = DateFormat('yyyy-MM-dd');
   final _timeFormat = DateFormat('HH:mm');
 
+  AccountHistoryRequest get _request => AccountHistoryRequest(
+    accountNumber: widget.accountNumber,
+    limit: _limit,
+  );
+
   @override
   Widget build(BuildContext context) {
     final accountsAsync = ref.watch(accountsProvider);
-    final historyAsync = ref.watch(
-      accountHistoryProvider(
-        AccountHistoryRequest(
-          accountNumber: widget.accountNumber,
-          limit: _limit,
-        ),
-      ),
-    );
+    final historyAsync = ref.watch(accountHistoryProvider(_request));
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.accountName),
+        title: _selectionMode
+            ? Text('${_selectedHistoryIds.length} selected')
+            : Text(widget.accountName),
+        leading: _selectionMode
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: _clearSelection,
+              )
+            : null,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.copy),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: widget.accountNumber));
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Copied: ${widget.accountNumber}'),
-                  duration: const Duration(seconds: 1),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-          ),
+          if (_selectionMode) ...[
+            IconButton(
+              icon: const Icon(Icons.select_all),
+              tooltip: 'Select all',
+              onPressed: historyAsync.valueOrNull == null || _groupByDay
+                  ? null
+                  : () => _selectAllVisible(historyAsync.valueOrNull!),
+            ),
+            IconButton(
+              icon: _isDeleting
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete),
+              tooltip: 'Delete selected',
+              onPressed: _isDeleting || _selectedHistoryIds.isEmpty
+                  ? null
+                  : () => _deleteSelectedHistory(context),
+            ),
+          ] else
+            IconButton(
+              icon: const Icon(Icons.copy),
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: widget.accountNumber));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Copied: ${widget.accountNumber}'),
+                    duration: const Duration(seconds: 1),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            ),
         ],
       ),
       body: historyAsync.when(
@@ -64,18 +94,9 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
           if (history.isEmpty) {
             return const Center(child: Text('No history available'));
           }
-          final displayHistory = _groupByDay
-              ? _collapseToDailyLast(history)
-              : history;
+          final displayHistory = _groupByDay ? _collapseToDailyLast(history) : history;
           return RefreshIndicator(
-            onRefresh: () => ref.refresh(
-              accountHistoryProvider(
-                AccountHistoryRequest(
-                  accountNumber: widget.accountNumber,
-                  limit: _limit,
-                ),
-              ).future,
-            ),
+            onRefresh: () => ref.refresh(accountHistoryProvider(_request).future),
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -87,23 +108,36 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                 const SizedBox(height: 12),
                 _buildControls(),
                 const SizedBox(height: 12),
+                if (_selectionMode)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      '길게 눌러 선택 모드로 들어왔어요. 삭제할 기록을 선택한 뒤 휴지통 버튼을 눌러주세요.',
+                      style: TextStyle(fontSize: 12, color: Colors.blueGrey[600]),
+                    ),
+                  ),
                 ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: displayHistory.length,
-                  separatorBuilder: (context, index) =>
-                      const Divider(height: 16),
+                  separatorBuilder: (context, index) => const Divider(height: 16),
                   itemBuilder: (context, index) {
                     final entry = displayHistory[index];
+                    final historyId = _historyEntryId(entry);
                     final date = _parseDate(entry['date']?.toString() ?? '');
                     final balance = _asDouble(entry['balance']);
+                    final isSelected = _selectedHistoryIds.contains(historyId);
                     double? diff;
                     if (index + 1 < displayHistory.length) {
-                      diff =
-                          balance -
-                          _asDouble(displayHistory[index + 1]['balance']);
+                      diff = balance - _asDouble(displayHistory[index + 1]['balance']);
                     }
-                    return _buildHistoryRow(date, balance, diff);
+                    return _buildHistoryRow(
+                      entry: entry,
+                      date: date,
+                      balance: balance,
+                      diff: diff,
+                      isSelected: isSelected,
+                    );
                   },
                 ),
               ],
@@ -130,6 +164,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
             onSelectionChanged: (selection) {
               setState(() {
                 _limit = selection.first;
+                _clearSelectionState();
               });
             },
           ),
@@ -143,6 +178,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
               onChanged: (value) {
                 setState(() {
                   _groupByDay = value;
+                  _clearSelectionState();
                 });
               },
             ),
@@ -160,13 +196,10 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     final latest = displayHistory.first;
     final latestDate = _parseDate(latest['date']?.toString() ?? '');
     final latestBalance = _asDouble(latest['balance']);
-    final delta = _groupByDay
-        ? _calculateMonthlyChange(history)
-        : _calculateTodayChange(history) ?? listTodayDiff;
+    final delta =
+        _groupByDay ? _calculateMonthlyChange(history) : _calculateTodayChange(history) ?? listTodayDiff;
     final deltaColor = (delta ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
-    final deltaText = delta == null
-        ? '--'
-        : '${delta >= 0 ? '+' : ''}${_currency.format(delta)}';
+    final deltaText = delta == null ? '--' : '${delta >= 0 ? '+' : ''}${_currency.format(delta)}';
     final deltaLabel = _groupByDay ? 'Monthly Change' : "Today's Change";
 
     return Card(
@@ -252,54 +285,189 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     return raw.toLowerCase();
   }
 
-  Widget _buildHistoryRow(DateTime date, double balance, double? diff) {
+  Widget _buildHistoryRow({
+    required Map<String, dynamic> entry,
+    required DateTime date,
+    required double balance,
+    required double? diff,
+    required bool isSelected,
+  }) {
     final diffColor = (diff ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
-    final diffText = diff == null
-        ? ''
-        : '${diff >= 0 ? '+' : ''}${_currency.format(diff)}';
+    final diffText = diff == null ? '' : '${diff >= 0 ? '+' : ''}${_currency.format(diff)}';
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Material(
+      color: isSelected ? Colors.blue.withOpacity(0.08) : Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onLongPress: _groupByDay ? null : () => _enterSelectionMode(entry),
+        onTap: _selectionMode ? () => _toggleSelection(entry) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          child: Row(
             children: [
-              Text(
-                _dateFormat.format(date),
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 150),
+                child: _selectionMode
+                    ? Padding(
+                        key: ValueKey<bool>(isSelected),
+                        padding: const EdgeInsets.only(right: 12),
+                        child: Icon(
+                          isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                          color: isSelected ? Colors.blue : Colors.grey,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
-              Text(
-                _timeFormat.format(date),
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _dateFormat.format(date),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                        Text(
+                          _timeFormat.format(date),
+                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(
+                          _currency.format(balance),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            color: Colors.blueGrey[900],
+                          ),
+                        ),
+                        if (diff != null)
+                          Text(
+                            diffText,
+                            style: TextStyle(fontSize: 11, color: diffColor),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                _currency.format(balance),
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: Colors.blueGrey[900],
-                ),
-              ),
-              if (diff != null)
-                Text(
-                  diffText,
-                  style: TextStyle(fontSize: 11, color: diffColor),
-                ),
-            ],
+        ),
+      ),
+    );
+  }
+
+  void _enterSelectionMode(Map<String, dynamic> entry) {
+    setState(() {
+      _selectionMode = true;
+      _selectedHistoryIds.add(_historyEntryId(entry));
+    });
+  }
+
+  void _toggleSelection(Map<String, dynamic> entry) {
+    final id = _historyEntryId(entry);
+    setState(() {
+      if (_selectedHistoryIds.contains(id)) {
+        _selectedHistoryIds.remove(id);
+      } else {
+        _selectedHistoryIds.add(id);
+      }
+      if (_selectedHistoryIds.isEmpty) {
+        _selectionMode = false;
+      }
+    });
+  }
+
+  void _selectAllVisible(List<dynamic> history) {
+    if (_groupByDay) return;
+    setState(() {
+      _selectionMode = true;
+      _selectedHistoryIds
+        ..clear()
+        ..addAll(history.map((entry) => _historyEntryId(entry)));
+    });
+  }
+
+  void _clearSelection() {
+    setState(_clearSelectionState);
+  }
+
+  void _clearSelectionState() {
+    _selectionMode = false;
+    _selectedHistoryIds.clear();
+  }
+
+
+  Future<void> _deleteSelectedHistory(BuildContext context) async {
+    if (_selectedHistoryIds.isEmpty || _groupByDay) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete records'),
+        content: Text('${_selectedHistoryIds.length}개의 기록을 삭제할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
           ),
         ],
       ),
     );
+
+    if (confirmed != true || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() {
+      _isDeleting = true;
+    });
+
+    try {
+      await ref.read(accountHistoryServiceProvider).deleteHistoryEntries(
+        accountNumber: widget.accountNumber,
+        selectedDates: _selectedHistoryIds.toList(),
+      );
+      if (!mounted) return;
+      setState(() {
+        _isDeleting = false;
+        _clearSelectionState();
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('선택한 기록을 삭제했습니다.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _isDeleting = false;
+      });
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('삭제 중 오류가 발생했습니다: $error'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  String _historyEntryId(Map<String, dynamic> entry) {
+    return entry['date']?.toString() ?? '';
   }
 
   double _asDouble(dynamic value) {
@@ -361,9 +529,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     for (final entry in history) {
       final date = _parseDate(entry['date']?.toString() ?? '');
       final balance = _asDouble(entry['balance']);
-      if (currentMonthLatest == null &&
-          date.year == currentYear &&
-          date.month == currentMonth) {
+      if (currentMonthLatest == null && date.year == currentYear && date.month == currentMonth) {
         currentMonthLatest = balance;
       }
       if (currentMonthLatest != null &&
@@ -390,8 +556,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
         latestByDate[key] = entry;
       }
     }
-    final items = latestByDate.entries.toList()
-      ..sort((a, b) => b.key.compareTo(a.key));
+    final items = latestByDate.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
     return items.map((e) {
       final date = latestAt[e.key];
       if (date == null) return e.value;
