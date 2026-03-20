@@ -26,6 +26,21 @@ final homeTabProvider = StateProvider<int>((ref) => 0);
 final trendChartTypeProvider = StateProvider<String>((ref) => 'day');
 final selectedAccountProvider = StateProvider<AccountSelection?>((ref) => null);
 
+
+class DeleteAccountHistoryRequest {
+  final String accountNumber;
+  final List<String> selectedDates;
+
+  const DeleteAccountHistoryRequest({
+    required this.accountNumber,
+    required this.selectedDates,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'selected_dates': selectedDates,
+  };
+}
+
 class AccountSelection {
   final String accountNumber;
   final String accountName;
@@ -109,3 +124,31 @@ final accountHistoryProvider = FutureProvider.autoDispose
       }
       return (response.data['data'] as List?) ?? [];
     });
+
+final accountHistoryServiceProvider = Provider<AccountHistoryService>((ref) {
+  return AccountHistoryService(ref);
+});
+
+class AccountHistoryService {
+  final Ref ref;
+
+  AccountHistoryService(this.ref);
+
+  Future<void> deleteHistoryEntries({
+    required String accountNumber,
+    required List<String> selectedDates,
+  }) async {
+    final dio = ref.read(dioProvider);
+    await dio.delete(
+      '/api/dashboard/accounts/$accountNumber/history',
+      data: DeleteAccountHistoryRequest(
+        accountNumber: accountNumber,
+        selectedDates: selectedDates,
+      ).toJson(),
+    );
+    ref.invalidate(accountsProvider);
+    ref.invalidate(dashboardSummaryProvider);
+    ref.invalidate(chartDataProvider);
+    ref.invalidate(accountHistoryProvider);
+  }
+}
