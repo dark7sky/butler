@@ -121,6 +121,55 @@ def _refresh_portfolio_tables(db: Session) -> None:
     _ACCOUNTS_CACHE["data"] = None
 
 
+def _delete_account_history_rows(
+    *,
+    account_number: str,
+    payload: AccountHistoryDeleteRequest,
+    db: Session,
+) -> dict[str, Any]:
+    if not account_exists(db, account_number):
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    selected_dates = list(dict.fromkeys(payload.selected_dates))
+    if not selected_dates:
+        raise HTTPException(status_code=400, detail="No history rows selected")
+
+    parsed_dates = []
+    for raw in selected_dates:
+        parsed = datetime.fromisoformat(raw)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=get_app_timezone())
+        else:
+            parsed = parsed.astimezone(get_app_timezone())
+        parsed_dates.append(parsed)
+
+    result = db.execute(
+        text(
+            """
+            DELETE FROM account_balance_history
+            WHERE account_key = :account_key
+              AND recorded_at = :recorded_at
+            """
+        ),
+        [
+            {
+                "account_key": account_number,
+                "recorded_at": recorded_at,
+            }
+            for recorded_at in parsed_dates
+        ],
+    )
+
+    deleted_count = result.rowcount or 0
+    if deleted_count == 0:
+        db.rollback()
+        raise HTTPException(status_code=404, detail="Selected history rows not found")
+
+    _refresh_portfolio_tables(db)
+    db.commit()
+    return {"status": "success", "deleted": deleted_count}
+
+
 def _parse_request_datetime(value: str | None, default: datetime) -> datetime:
     if not value:
         return default
@@ -444,50 +493,35 @@ async def delete_account_history(
     db: Session = Depends(get_db),
 ):
     try:
-        if not account_exists(db, account_number):
-            raise HTTPException(status_code=404, detail="Account not found")
-
-        selected_dates = list(dict.fromkeys(payload.selected_dates))
-        if not selected_dates:
-            raise HTTPException(status_code=400, detail="No history rows selected")
-
-        parsed_dates = []
-        for raw in selected_dates:
-            parsed = datetime.fromisoformat(raw)
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=get_app_timezone())
-            else:
-                parsed = parsed.astimezone(get_app_timezone())
-            parsed_dates.append(parsed)
-
-        result = db.execute(
-            text(
-                """
-                DELETE FROM account_balance_history
-                WHERE account_key = :account_key
-                  AND recorded_at = :recorded_at
-                """
-            ),
-            [
-                {
-                    "account_key": account_number,
-                    "recorded_at": recorded_at,
-                }
-                for recorded_at in parsed_dates
-            ],
+        return _delete_account_history_rows(
+            account_number=account_number,
+            payload=payload,
+            db=db,
         )
-
-        deleted_count = result.rowcount or 0
-        if deleted_count == 0:
-            db.rollback()
-            raise HTTPException(status_code=404, detail="Selected history rows not found")
-
-        _refresh_portfolio_tables(db)
-        db.commit()
-        return {"status": "success", "deleted": deleted_count}
     except HTTPException:
         raise
     except Exception as exc:
         db.rollback()
         print(f"DEBUG: Error in delete_account_history: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/accounts/{account_number}/history/delete")
+async def delete_account_history_via_post(
+    account_number: str,
+    payload: AccountHistoryDeleteRequest,
+    current_user: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return _delete_account_history_rows(
+            account_number=account_number,
+            payload=payload,
+            db=db,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        print(f"DEBUG: Error in delete_account_history_via_post: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))

@@ -31,10 +31,8 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   final _dateFormat = DateFormat('yyyy-MM-dd');
   final _timeFormat = DateFormat('HH:mm');
 
-  AccountHistoryRequest get _request => AccountHistoryRequest(
-    accountNumber: widget.accountNumber,
-    limit: _limit,
-  );
+  AccountHistoryRequest get _request =>
+      AccountHistoryRequest(accountNumber: widget.accountNumber, limit: _limit);
 
   @override
   Widget build(BuildContext context) {
@@ -95,9 +93,12 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
           if (history.isEmpty) {
             return const Center(child: Text('No history available'));
           }
-          final displayHistory = _groupByDay ? _collapseToDailyLast(history) : history;
+          final displayHistory = _groupByDay
+              ? _collapseToDailyLast(history)
+              : history;
           return RefreshIndicator(
-            onRefresh: () => ref.refresh(accountHistoryProvider(_request).future),
+            onRefresh: () =>
+                ref.refresh(accountHistoryProvider(_request).future),
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -114,14 +115,18 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Text(
                       '길게 눌러 선택 모드로 들어왔어요. 삭제할 기록을 선택한 뒤 휴지통 버튼을 눌러주세요.',
-                      style: TextStyle(fontSize: 12, color: Colors.blueGrey[600]),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blueGrey[600],
+                      ),
                     ),
                   ),
                 ListView.separated(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: displayHistory.length,
-                  separatorBuilder: (context, index) => const Divider(height: 16),
+                  separatorBuilder: (context, index) =>
+                      const Divider(height: 16),
                   itemBuilder: (context, index) {
                     final entry = displayHistory[index];
                     final historyId = _historyEntryId(entry);
@@ -130,7 +135,9 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                     final isSelected = _selectedHistoryIds.contains(historyId);
                     double? diff;
                     if (index + 1 < displayHistory.length) {
-                      diff = balance - _asDouble(displayHistory[index + 1]['balance']);
+                      diff =
+                          balance -
+                          _asDouble(displayHistory[index + 1]['balance']);
                     }
                     return _buildHistoryRow(
                       entry: entry,
@@ -197,10 +204,13 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     final latest = displayHistory.first;
     final latestDate = _parseDate(latest['date']?.toString() ?? '');
     final latestBalance = _asDouble(latest['balance']);
-    final delta =
-        _groupByDay ? _calculateMonthlyChange(history) : _calculateTodayChange(history) ?? listTodayDiff;
+    final delta = _groupByDay
+        ? _calculateMonthlyChange(history)
+        : _calculateTodayChange(history) ?? listTodayDiff;
     final deltaColor = (delta ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
-    final deltaText = delta == null ? '--' : '${delta >= 0 ? '+' : ''}${_currency.format(delta)}';
+    final deltaText = delta == null
+        ? '--'
+        : '${delta >= 0 ? '+' : ''}${_currency.format(delta)}';
     final deltaLabel = _groupByDay ? 'Monthly Change' : "Today's Change";
 
     return Card(
@@ -294,7 +304,9 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     required bool isSelected,
   }) {
     final diffColor = (diff ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
-    final diffText = diff == null ? '' : '${diff >= 0 ? '+' : ''}${_currency.format(diff)}';
+    final diffText = diff == null
+        ? ''
+        : '${diff >= 0 ? '+' : ''}${_currency.format(diff)}';
 
     return Material(
       color: isSelected ? Colors.blue.withOpacity(0.08) : Colors.transparent,
@@ -314,7 +326,9 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                         key: ValueKey<bool>(isSelected),
                         padding: const EdgeInsets.only(right: 12),
                         child: Icon(
-                          isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
+                          isSelected
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
                           color: isSelected ? Colors.blue : Colors.grey,
                         ),
                       )
@@ -336,7 +350,10 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                         ),
                         Text(
                           _timeFormat.format(date),
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
                         ),
                       ],
                     ),
@@ -408,7 +425,6 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     _selectedHistoryIds.clear();
   }
 
-
   Future<void> _deleteSelectedHistory(BuildContext context) async {
     if (_selectedHistoryIds.isEmpty || _groupByDay) return;
 
@@ -438,10 +454,12 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     });
 
     try {
-      await ref.read(accountHistoryServiceProvider).deleteHistoryEntries(
-        accountNumber: widget.accountNumber,
-        selectedDates: _selectedHistoryIds.toList(),
-      );
+      await ref
+          .read(accountHistoryServiceProvider)
+          .deleteHistoryEntries(
+            accountNumber: widget.accountNumber,
+            selectedDates: _selectedHistoryIds.toList(),
+          );
       if (!mounted) return;
       setState(() {
         _isDeleting = false;
@@ -460,7 +478,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
       });
       messenger.showSnackBar(
         SnackBar(
-          content: Text('삭제 중 오류가 발생했습니다: $error'),
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -530,7 +548,9 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     for (final entry in history) {
       final date = _parseDate(entry['date']?.toString() ?? '');
       final balance = _asDouble(entry['balance']);
-      if (currentMonthLatest == null && date.year == currentYear && date.month == currentMonth) {
+      if (currentMonthLatest == null &&
+          date.year == currentYear &&
+          date.month == currentMonth) {
         currentMonthLatest = balance;
       }
       if (currentMonthLatest != null &&
@@ -557,7 +577,8 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
         latestByDate[key] = entry;
       }
     }
-    final items = latestByDate.entries.toList()..sort((a, b) => b.key.compareTo(a.key));
+    final items = latestByDate.entries.toList()
+      ..sort((a, b) => b.key.compareTo(a.key));
     return items.map((e) {
       final date = latestAt[e.key];
       if (date == null) return e.value;

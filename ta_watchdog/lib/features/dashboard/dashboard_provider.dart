@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
 import '../../core/api_client.dart';
@@ -26,7 +27,6 @@ final homeTabProvider = StateProvider<int>((ref) => 0);
 final trendChartTypeProvider = StateProvider<String>((ref) => 'day');
 final selectedAccountProvider = StateProvider<AccountSelection?>((ref) => null);
 
-
 class DeleteAccountHistoryRequest {
   final String accountNumber;
   final List<String> selectedDates;
@@ -36,9 +36,7 @@ class DeleteAccountHistoryRequest {
     required this.selectedDates,
   });
 
-  Map<String, dynamic> toJson() => {
-    'selected_dates': selectedDates,
-  };
+  Map<String, dynamic> toJson() => {'selected_dates': selectedDates};
 }
 
 class AccountSelection {
@@ -139,16 +137,64 @@ class AccountHistoryService {
     required List<String> selectedDates,
   }) async {
     final dio = ref.read(dioProvider);
-    await dio.delete(
-      '/api/dashboard/accounts/$accountNumber/history',
-      data: DeleteAccountHistoryRequest(
-        accountNumber: accountNumber,
-        selectedDates: selectedDates,
-      ).toJson(),
-    );
+    final payload = DeleteAccountHistoryRequest(
+      accountNumber: accountNumber,
+      selectedDates: selectedDates,
+    ).toJson();
+
+    try {
+      await dio.post(
+        '/api/dashboard/accounts/$accountNumber/history/delete',
+        data: payload,
+      );
+    } on DioException catch (error) {
+      final statusCode = error.response?.statusCode;
+      if (statusCode != 404 && statusCode != 405) {
+        throw Exception(_describeDeleteError(error));
+      }
+
+      try {
+        await dio.delete(
+          '/api/dashboard/accounts/$accountNumber/history',
+          data: payload,
+        );
+      } on DioException catch (fallbackError) {
+        throw Exception(_describeDeleteError(fallbackError));
+      }
+    }
+
     ref.invalidate(accountsProvider);
     ref.invalidate(dashboardSummaryProvider);
     ref.invalidate(chartDataProvider);
     ref.invalidate(accountHistoryProvider);
+  }
+
+  String _describeDeleteError(DioException error) {
+    final responseData = error.response?.data;
+    final detail = _extractErrorDetail(responseData);
+    if (detail != null) {
+      return detail;
+    }
+
+    return switch (error.response?.statusCode) {
+      404 =>
+        'Delete API not found on the server. Please update or redeploy the backend.',
+      405 =>
+        'Delete method is not allowed by the current server or proxy. Please update the backend deployment.',
+      _ => error.message ?? 'Failed to delete the selected history entries.',
+    };
+  }
+
+  String? _extractErrorDetail(dynamic responseData) {
+    if (responseData is! Map) {
+      return null;
+    }
+
+    final detail = responseData['detail'] ?? responseData['message'];
+    if (detail is String && detail.trim().isNotEmpty) {
+      return detail.trim();
+    }
+
+    return null;
   }
 }
