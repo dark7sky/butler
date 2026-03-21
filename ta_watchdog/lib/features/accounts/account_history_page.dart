@@ -20,7 +20,6 @@ class AccountHistoryPage extends ConsumerStatefulWidget {
 
 class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   int _limit = 50;
-  bool _groupByDay = false;
   bool _selectionMode = false;
   bool _isDeleting = false;
   final Set<String> _selectedHistoryIds = <String>{};
@@ -56,7 +55,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
             IconButton(
               icon: const Icon(Icons.select_all),
               tooltip: 'Select all',
-              onPressed: loadedHistory == null || _groupByDay
+              onPressed: loadedHistory == null
                   ? null
                   : () => _selectAllVisible(loadedHistory),
             ),
@@ -93,9 +92,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
           if (history.isEmpty) {
             return const Center(child: Text('No history available'));
           }
-          final displayHistory = _groupByDay
-              ? _collapseToDailyLast(history)
-              : history;
+          final displayHistory = history;
           return RefreshIndicator(
             onRefresh: () =>
                 ref.refresh(accountHistoryProvider(_request).future),
@@ -159,40 +156,19 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   }
 
   Widget _buildControls() {
-    return Row(
-      children: [
-        Expanded(
-          child: SegmentedButton<int>(
-            segments: const [
-              ButtonSegment(value: 50, label: Text('50')),
-              ButtonSegment(value: 200, label: Text('200')),
-              ButtonSegment(value: 1000, label: Text('1000')),
-            ],
-            selected: {_limit},
-            onSelectionChanged: (selection) {
-              setState(() {
-                _limit = selection.first;
-                _clearSelectionState();
-              });
-            },
-          ),
-        ),
-        const SizedBox(width: 12),
-        Row(
-          children: [
-            const Text('Days', style: TextStyle(color: Colors.blueGrey)),
-            Switch(
-              value: _groupByDay,
-              onChanged: (value) {
-                setState(() {
-                  _groupByDay = value;
-                  _clearSelectionState();
-                });
-              },
-            ),
-          ],
-        ),
+    return SegmentedButton<int>(
+      segments: const [
+        ButtonSegment(value: 50, label: Text('50')),
+        ButtonSegment(value: 200, label: Text('200')),
+        ButtonSegment(value: 1000, label: Text('1000')),
       ],
+      selected: {_limit},
+      onSelectionChanged: (selection) {
+        setState(() {
+          _limit = selection.first;
+          _clearSelectionState();
+        });
+      },
     );
   }
 
@@ -204,14 +180,12 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     final latest = displayHistory.first;
     final latestDate = _parseDate(latest['date']?.toString() ?? '');
     final latestBalance = _asDouble(latest['balance']);
-    final delta = _groupByDay
-        ? _calculateMonthlyChange(history)
-        : _calculateTodayChange(history) ?? listTodayDiff;
+    final delta = _calculateTodayChange(history) ?? listTodayDiff;
     final deltaColor = (delta ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
     final deltaText = delta == null
         ? '--'
         : '${delta >= 0 ? '+' : ''}${_currency.format(delta)}';
-    final deltaLabel = _groupByDay ? 'Monthly Change' : "Today's Change";
+    const deltaLabel = "Today's Change";
 
     return Card(
       elevation: 3,
@@ -313,7 +287,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onLongPress: _groupByDay ? null : () => _enterSelectionMode(entry),
+        onLongPress: () => _enterSelectionMode(entry),
         onTap: _selectionMode ? () => _toggleSelection(entry) : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
@@ -407,7 +381,6 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   }
 
   void _selectAllVisible(List<dynamic> history) {
-    if (_groupByDay) return;
     setState(() {
       _selectionMode = true;
       _selectedHistoryIds
@@ -426,7 +399,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
   }
 
   Future<void> _deleteSelectedHistory(BuildContext context) async {
-    if (_selectedHistoryIds.isEmpty || _groupByDay) return;
+    if (_selectedHistoryIds.isEmpty) return;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -536,53 +509,4 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     return todayLatest - baseline;
   }
 
-  double? _calculateMonthlyChange(List<dynamic> history) {
-    if (history.isEmpty) return null;
-    final now = DateTime.now();
-    final currentYear = now.year;
-    final currentMonth = now.month;
-    final prevMonth = currentMonth == 1 ? 12 : currentMonth - 1;
-    final prevYear = currentMonth == 1 ? currentYear - 1 : currentYear;
-    double? currentMonthLatest;
-    double? prevMonthLatest;
-    for (final entry in history) {
-      final date = _parseDate(entry['date']?.toString() ?? '');
-      final balance = _asDouble(entry['balance']);
-      if (currentMonthLatest == null &&
-          date.year == currentYear &&
-          date.month == currentMonth) {
-        currentMonthLatest = balance;
-      }
-      if (currentMonthLatest != null &&
-          prevMonthLatest == null &&
-          date.year == prevYear &&
-          date.month == prevMonth) {
-        prevMonthLatest = balance;
-        break;
-      }
-    }
-    if (currentMonthLatest == null || prevMonthLatest == null) return null;
-    return currentMonthLatest - prevMonthLatest;
-  }
-
-  List<dynamic> _collapseToDailyLast(List<dynamic> history) {
-    final Map<String, dynamic> latestByDate = {};
-    final Map<String, DateTime> latestAt = {};
-    for (final entry in history) {
-      final date = _parseDate(entry['date']?.toString() ?? '');
-      final key = DateFormat('yyyy-MM-dd').format(date);
-      final current = latestAt[key];
-      if (current == null || date.isAfter(current)) {
-        latestAt[key] = date;
-        latestByDate[key] = entry;
-      }
-    }
-    final items = latestByDate.entries.toList()
-      ..sort((a, b) => b.key.compareTo(a.key));
-    return items.map((e) {
-      final date = latestAt[e.key];
-      if (date == null) return e.value;
-      return {...e.value, 'date': date.toIso8601String()};
-    }).toList();
-  }
 }
