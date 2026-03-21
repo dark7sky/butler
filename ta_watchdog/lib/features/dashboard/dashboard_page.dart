@@ -134,9 +134,9 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         onTap: accountNumber.isEmpty
             ? null
             : () => _openAccountDetail(
-                  accountNumber: accountNumber,
-                  accountName: name.isNotEmpty ? name : company,
-                ),
+                accountNumber: accountNumber,
+                accountName: name.isNotEmpty ? name : company,
+              ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: CircleAvatar(
           backgroundColor: (isPositive ? Colors.teal : Colors.redAccent)
@@ -212,6 +212,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget _buildSummaryCards(Map<String, dynamic> data) {
     final daily = data['summary_daily'];
     final monthly = data['summary_monthly'];
+    final lastUpdate = _resolveLastUpdate(data);
 
     return Column(
       children: [
@@ -222,7 +223,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             value: _isBalanceVisible
                 ? _currency.format(daily['balance_now'])
                 : '********',
-            subtitle: 'Last Update: ${daily['last_date']}',
+            subtitle: 'Last Update: $lastUpdate',
             icon: Icons.account_balance_wallet,
             color: Colors.blueAccent,
             trailing: Icon(
@@ -347,5 +348,24 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   double _asDouble(dynamic value) {
     if (value is num) return value.toDouble();
     return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  String _resolveLastUpdate(Map<String, dynamic> data) {
+    final daily = data['summary_daily'];
+    final todayDetail = data['today_detail'];
+    final candidates = [
+      daily is Map ? daily['last_crawled_at'] : null,
+      todayDetail is Map ? todayDetail['last_update'] : null,
+      daily is Map ? daily['last_date'] : null,
+    ];
+
+    for (final candidate in candidates) {
+      final text = candidate?.toString().trim() ?? '';
+      if (text.isNotEmpty) {
+        return text;
+      }
+    }
+
+    return 'N/A';
   }
 }

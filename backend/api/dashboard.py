@@ -32,6 +32,7 @@ class AccountHistoryDeleteRequest(BaseModel):
 
 _ACCOUNTS_CACHE = {"ts": 0.0, "data": None}
 _ACCOUNTS_CACHE_TTL_SECONDS = 10
+TA_WEB_LAST_CRAWLED_AT_KEY = "ta_web_last_crawled_at"
 
 
 def _resolve_today_diff(row: dict) -> float:
@@ -208,6 +209,61 @@ def _group_balance_rows(
     return data
 
 
+def _serialize_setting_timestamp(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return serialize_timestamp(value)
+    if isinstance(value, dict):
+        for key in (
+            "crawled_at",
+            "last_crawled_at",
+            "recorded_at",
+            "timestamp",
+        ):
+            stamp = _serialize_setting_timestamp(value.get(key))
+            if stamp:
+                return stamp
+        return ""
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return ""
+        if raw.endswith("Z"):
+            raw = f"{raw[:-1]}+00:00"
+        try:
+            return serialize_timestamp(datetime.fromisoformat(raw))
+        except ValueError:
+            return value
+    return ""
+
+
+def _read_last_crawled_at(db: Session) -> str:
+    try:
+        row = db.execute(
+            text(
+                """
+                SELECT setting_value, updated_at
+                FROM system_settings
+                WHERE setting_key = :setting_key
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """
+            ),
+            {"setting_key": TA_WEB_LAST_CRAWLED_AT_KEY},
+        ).fetchone()
+    except Exception:
+        return ""
+
+    if not row:
+        return ""
+
+    from_value = _serialize_setting_timestamp(row[0])
+    if from_value:
+        return from_value
+    return serialize_timestamp(row[1])
+
+
 @router.get("/summary")
 async def get_dashboard_summary(
     current_user: str = Depends(get_current_user),
@@ -221,6 +277,7 @@ async def get_dashboard_summary(
     diffs = []
     today_diff = 0.0
     last_update = ""
+    last_crawled_at = ""
     daily_sums = ["N/A", 0.0, 0.0, 0.0]
     month_sums = [0.0, 0.0, 0.0]
 
@@ -278,9 +335,11 @@ async def get_dashboard_summary(
         ).fetchone()
         if bal_now:
             daily_sums[0] = serialize_timestamp(bal_now[0])
-            last_update = daily_sums[0]
             daily_sums[1] = float(bal_now[1])
             month_sums[0] = float(bal_now[1])
+
+        last_crawled_at = _read_last_crawled_at(db) or daily_sums[0]
+        last_update = last_crawled_at
 
         daily_sums[2] = today_diff
 
@@ -330,6 +389,7 @@ async def get_dashboard_summary(
 
         diffs.sort(key=lambda item: item["diff"], reverse=True)
     except Exception as exc:
+        last_crawled_at = f"Error: {exc}"
         last_update = f"Error: {exc}"
 
     return {
@@ -337,6 +397,7 @@ async def get_dashboard_summary(
         "data": {
             "summary_daily": {
                 "last_date": daily_sums[0],
+                "last_crawled_at": last_crawled_at,
                 "balance_now": daily_sums[1],
                 "diff_day": daily_sums[2],
                 "diff_month": daily_sums[3],
