@@ -7,6 +7,8 @@ services:
     container_name: ta_watchdog_api
     restart: always
     # Portainer stack env vars (or local shell/.env at compose-parse time)
+    ports:
+      - "8921:8921"
     environment:
       DATABASE_URL: ${DATABASE_URL}
       SECRET_KEY: ${SECRET_KEY}
@@ -20,7 +22,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - nginx_internal_net
+      - postgres_container_net
     volumes:
       # Optional: Mount the backend directory for local development (hot-reload)
       # - ./:/app
@@ -30,5 +32,5 @@ volumes:
   api_data:
 
 networks:
-  nginx_internal_net:
+  postgres_container_net:
     external: true
