@@ -32,5 +32,5 @@ volumes:
   api_data:
 
 networks:
-  postgres_container_net:
+  postgres_container_network:
     external: true
