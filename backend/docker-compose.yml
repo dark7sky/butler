@@ -22,7 +22,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - postgres_container_network
+      - portainer_container_network
     volumes:
       # Optional: Mount the backend directory for local development (hot-reload)
       # - ./:/app
@@ -32,5 +32,5 @@ volumes:
   api_data:
 
 networks:
-  postgres_container_network:
+  portainer_container_network:
     external: true
