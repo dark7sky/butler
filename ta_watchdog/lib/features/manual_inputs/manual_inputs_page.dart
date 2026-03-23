@@ -8,6 +8,10 @@ import '../../models/manual_input.dart';
 class ManualInputsPage extends ConsumerWidget {
   const ManualInputsPage({super.key});
 
+  String _formatIntegerInput(double value) {
+    return value.toInt().toString();
+  }
+
   void _showInputForm(
     BuildContext context,
     WidgetRef ref, [
@@ -20,7 +24,7 @@ class ManualInputsPage extends ConsumerWidget {
 
     final keyController = TextEditingController(text: input?.keyName);
     final valueController = TextEditingController(
-      text: isEditing ? currentValue.toString() : '',
+      text: isEditing ? _formatIntegerInput(currentValue) : '',
     );
 
     showModalBottomSheet(
@@ -127,7 +131,8 @@ class ManualInputsPage extends ConsumerWidget {
                         if (isDeltaMode) {
                           valueController.text = '';
                         } else if (isEditing) {
-                          valueController.text = currentValue.toString();
+                          valueController.text =
+                              _formatIntegerInput(currentValue);
                         }
                         valueController.selection = TextSelection.collapsed(
                           offset: valueController.text.length,
@@ -149,8 +154,7 @@ class ManualInputsPage extends ConsumerWidget {
                       labelText: 'Key Name (e.g. KRW_USD)',
                       border: OutlineInputBorder(),
                     ),
-                    enabled:
-                        !isEditing,
+                    enabled: !isEditing,
                   ),
                   const SizedBox(height: 16),
                   TextField(
@@ -159,10 +163,14 @@ class ManualInputsPage extends ConsumerWidget {
                       labelText: isDeltaMode
                           ? 'Change (+/-)'
                           : 'Value (e.g. 1350)',
-                      helperText: isDeltaMode ? 'Example: +1000 or -500 (integers only)' : 'Integers only',
+                      helperText: isDeltaMode
+                          ? 'Example: +1000 or -500 (integers only)'
+                          : 'Integers only',
                       border: const OutlineInputBorder(),
                     ),
-                    keyboardType: const TextInputType.numberWithOptions(signed: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      signed: true,
+                    ),
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(RegExp(r'[0-9\-]')),
                     ],
@@ -191,6 +199,7 @@ class ManualInputsPage extends ConsumerWidget {
       },
     );
   }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final inputsAsync = ref.watch(manualInputsProvider);
