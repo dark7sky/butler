@@ -95,7 +95,6 @@ class ManualInputsPage extends ConsumerWidget {
   ]) {
     final isEditing = input != null;
     final currentValue = input?.value ?? 0.0;
-    final valueFormat = NumberFormat.decimalPattern('ko_KR');
     bool isDeltaMode = false;
 
     final keyController = TextEditingController(text: input?.keyName);
@@ -223,7 +222,7 @@ class ManualInputsPage extends ConsumerWidget {
                   if (isEditing) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Current: ${valueFormat.format(currentValue)}',
+                      'Current: ${_formatIntegerInput(currentValue)}',
                       style: const TextStyle(color: Colors.blueGrey),
                     ),
                   ],
@@ -261,7 +260,7 @@ class ManualInputsPage extends ConsumerWidget {
                   if (preview != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'After: ${valueFormat.format(preview)}',
+                      'After: ${_formatIntegerInput(preview)}',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
