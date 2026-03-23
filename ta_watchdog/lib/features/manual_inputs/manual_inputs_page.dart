@@ -81,7 +81,6 @@ class _GroupedIntegerInputFormatter extends TextInputFormatter {
 
 class ManualInputsPage extends ConsumerWidget {
   const ManualInputsPage({super.key});
-
   static final _groupedIntegerFormatter = _GroupedIntegerInputFormatter();
 
   String _formatIntegerInput(double value) {
