@@ -5,8 +5,87 @@ import 'package:intl/intl.dart';
 import 'manual_inputs_provider.dart';
 import '../../models/manual_input.dart';
 
+class _GroupedIntegerInputFormatter extends TextInputFormatter {
+  _GroupedIntegerInputFormatter()
+      : _numberFormat = NumberFormat.decimalPattern('ko_KR');
+
+  final NumberFormat _numberFormat;
+  static final _numericCharPattern = RegExp(r'[0-9-]');
+
+  String formatRawValue(String rawValue) {
+    final isNegative = rawValue.startsWith('-');
+    final digits = rawValue.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (digits.isEmpty) {
+      return isNegative ? '-' : '';
+    }
+
+    final grouped = _numberFormat.format(int.parse(digits)).replaceAll(',', ' ');
+    return isNegative ? '-$grouped' : grouped;
+  }
+
+  String unformat(String value) {
+    return value.replaceAll(RegExp(r'[,\s]'), '');
+  }
+
+  int _countNumericChars(String value) {
+    return _numericCharPattern.allMatches(value).length;
+  }
+
+  int _selectionOffsetForCount(String value, int numericCharCount) {
+    if (numericCharCount <= 0) {
+      return 0;
+    }
+
+    var seen = 0;
+    for (var i = 0; i < value.length; i++) {
+      if (_numericCharPattern.hasMatch(value[i])) {
+        seen++;
+        if (seen == numericCharCount) {
+          return i + 1;
+        }
+      }
+    }
+
+    return value.length;
+  }
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final normalized = unformat(newValue.text);
+    final isNegative = normalized.startsWith('-');
+    final digits = normalized.replaceAll(RegExp(r'[^0-9]'), '');
+    final rawValue = digits.isEmpty
+        ? (isNegative ? '-' : '')
+        : '${isNegative ? '-' : ''}$digits';
+    final formatted = formatRawValue(rawValue);
+    final selectionEnd = newValue.selection.end.clamp(0, newValue.text.length)
+        as int;
+    final numericCharsBeforeCursor = _countNumericChars(
+      newValue.text.substring(0, selectionEnd),
+    );
+    final selectionOffset = _selectionOffsetForCount(
+      formatted,
+      numericCharsBeforeCursor,
+    );
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: selectionOffset),
+    );
+  }
+}
+
 class ManualInputsPage extends ConsumerWidget {
   const ManualInputsPage({super.key});
+  static final _groupedIntegerFormatter = _GroupedIntegerInputFormatter();
+
+  String _formatIntegerInput(double value) {
+    return _groupedIntegerFormatter.formatRawValue(value.toInt().toString());
+  }
 
   String _formatIntegerInput(double value) {
     return value.toInt().toString();
@@ -19,7 +98,6 @@ class ManualInputsPage extends ConsumerWidget {
   ]) {
     final isEditing = input != null;
     final currentValue = input?.value ?? 0.0;
-    final valueFormat = NumberFormat.decimalPattern('ko_KR');
     bool isDeltaMode = false;
 
     final keyController = TextEditingController(text: input?.keyName);
@@ -38,7 +116,9 @@ class ManualInputsPage extends ConsumerWidget {
           builder: (context, setModalState) {
             Future<void> save() async {
               final key = keyController.text.trim();
-              final raw = valueController.text.trim().replaceAll(',', '');
+              final raw = _groupedIntegerFormatter.unformat(
+                valueController.text.trim(),
+              );
               final parsed = int.tryParse(raw);
               if (key.isEmpty || parsed == null) {
                 if (context.mounted) {
@@ -93,7 +173,9 @@ class ManualInputsPage extends ConsumerWidget {
               }
             }
 
-            final raw = valueController.text.trim().replaceAll(',', '');
+            final raw = _groupedIntegerFormatter.unformat(
+              valueController.text.trim(),
+            );
             final parsed = int.tryParse(raw);
             final preview = isDeltaMode && isEditing && parsed != null
                 ? currentValue + parsed
@@ -143,7 +225,7 @@ class ManualInputsPage extends ConsumerWidget {
                   if (isEditing) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Current: ${valueFormat.format(currentValue)}',
+                      'Current: ${_formatIntegerInput(currentValue)}',
                       style: const TextStyle(color: Colors.blueGrey),
                     ),
                   ],
@@ -172,7 +254,7 @@ class ManualInputsPage extends ConsumerWidget {
                       signed: true,
                     ),
                     inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[0-9\-]')),
+                      _groupedIntegerFormatter,
                     ],
                     textInputAction: TextInputAction.done,
                     onChanged: (_) => setModalState(() {}),
@@ -181,7 +263,7 @@ class ManualInputsPage extends ConsumerWidget {
                   if (preview != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'After: ${valueFormat.format(preview)}',
+                      'After: ${_formatIntegerInput(preview)}',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
