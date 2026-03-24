@@ -83,12 +83,8 @@ class ManualInputsPage extends ConsumerWidget {
   const ManualInputsPage({super.key});
   static final _groupedIntegerFormatter = _GroupedIntegerInputFormatter();
 
-  String _formatIntegerInput(double value) {
+  String _formatGroupedIntegerInput(double value) {
     return _groupedIntegerFormatter.formatRawValue(value.toInt().toString());
-  }
-
-  String _formatIntegerInput(double value) {
-    return value.toInt().toString();
   }
 
   void _showInputForm(
@@ -102,7 +98,7 @@ class ManualInputsPage extends ConsumerWidget {
 
     final keyController = TextEditingController(text: input?.keyName);
     final valueController = TextEditingController(
-      text: isEditing ? _formatIntegerInput(currentValue) : '',
+      text: isEditing ? _formatGroupedIntegerInput(currentValue) : '',
     );
 
     showModalBottomSheet(
@@ -214,7 +210,7 @@ class ManualInputsPage extends ConsumerWidget {
                           valueController.text = '';
                         } else if (isEditing) {
                           valueController.text =
-                              _formatIntegerInput(currentValue);
+                              _formatGroupedIntegerInput(currentValue);
                         }
                         valueController.selection = TextSelection.collapsed(
                           offset: valueController.text.length,
@@ -225,7 +221,7 @@ class ManualInputsPage extends ConsumerWidget {
                   if (isEditing) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Current: ${_formatIntegerInput(currentValue)}',
+                      'Current: ${_formatGroupedIntegerInput(currentValue)}',
                       style: const TextStyle(color: Colors.blueGrey),
                     ),
                   ],
@@ -263,7 +259,7 @@ class ManualInputsPage extends ConsumerWidget {
                   if (preview != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'After: ${_formatIntegerInput(preview)}',
+                      'After: ${_formatGroupedIntegerInput(preview)}',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
