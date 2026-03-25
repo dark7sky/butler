@@ -202,7 +202,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                     'Current Balance',
                     style: TextStyle(
                       fontSize: 12,
-                      color: Colors.blueGrey,
+                      color: Colors.white,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -212,12 +212,13 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Last: ${_dateFormat.format(latestDate)} ${_timeFormat.format(latestDate)}',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    style: const TextStyle(fontSize: 11, color: Colors.white70),
                   ),
                 ],
               ),
