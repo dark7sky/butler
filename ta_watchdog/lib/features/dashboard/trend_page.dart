@@ -423,6 +423,57 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       );
     }
 
+    final sortedItems = rawData
+        .map((rawItem) => rawItem as Map<String, dynamic>)
+        .toList()
+      ..sort((a, b) {
+        final aDate = DateTime.tryParse(a['date']?.toString() ?? '');
+        final bDate = DateTime.tryParse(b['date']?.toString() ?? '');
+
+        if (aDate == null && bDate == null) return 0;
+        if (aDate == null) return 1;
+        if (bDate == null) return -1;
+        return bDate.compareTo(aDate);
+      });
+
+    final avgBalance = sortedItems
+            .map((item) => (item['balance'] as num?)?.toDouble() ?? 0)
+            .fold<double>(0, (sum, value) => sum + value) /
+        sortedItems.length;
+
+    final tableRows = <DataRow>[
+      DataRow(
+        color: WidgetStateProperty.resolveWith<Color?>(
+          (_) => Colors.blueGrey.withValues(alpha: 0.08),
+        ),
+        cells: [
+          const DataCell(
+            Text(
+              'Average',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          DataCell(
+            Text(
+              _tooltipCurrency.format(avgBalance),
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+      ...sortedItems.map((item) {
+        final date = _formatTooltipDate(item['date']?.toString() ?? '');
+        final balance = (item['balance'] as num?)?.toDouble() ?? 0;
+
+        return DataRow(
+          cells: [
+            DataCell(Text(date)),
+            DataCell(Text(_tooltipCurrency.format(balance))),
+          ],
+        );
+      }),
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -446,18 +497,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                   numeric: true,
                 ),
               ],
-              rows: rawData.map((rawItem) {
-                final item = rawItem as Map<String, dynamic>;
-                final date = _formatTooltipDate(item['date']?.toString() ?? '');
-                final balance = (item['balance'] as num?)?.toDouble() ?? 0;
-
-                return DataRow(
-                  cells: [
-                    DataCell(Text(date)),
-                    DataCell(Text(_tooltipCurrency.format(balance))),
-                  ],
-                );
-              }).toList(),
+              rows: tableRows,
             ),
           ),
         ),
