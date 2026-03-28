@@ -285,17 +285,31 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               ),
             ),
             const SizedBox(height: 24),
-            SizedBox(
-              height: 400,
-              child: chartDataAsync.when(
-                data: (data) => _buildNativeChart(data),
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (err, stack) => Center(child: Text('Error: $err')),
+            chartDataAsync.when(
+              data: (data) => _buildChartWithTable(data),
+              loading: () => const SizedBox(
+                height: 400,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (err, stack) => SizedBox(
+                height: 400,
+                child: Center(child: Text('Error: $err')),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildChartWithTable(List<dynamic> rawData) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: 400, child: _buildNativeChart(rawData)),
+        const SizedBox(height: 20),
+        _buildTrendDataTable(rawData),
+      ],
     );
   }
 
@@ -398,6 +412,56 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTrendDataTable(List<dynamic> rawData) {
+    if (rawData.isEmpty) {
+      return const Text(
+        '표시할 데이터가 없습니다.',
+        style: TextStyle(color: Colors.blueGrey),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Chart Data',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Colors.blueGrey,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              columns: const [
+                DataColumn(label: Text('Date')),
+                DataColumn(
+                  label: Text('Balance'),
+                  numeric: true,
+                ),
+              ],
+              rows: rawData.map((rawItem) {
+                final item = rawItem as Map<String, dynamic>;
+                final date = _formatTooltipDate(item['date']?.toString() ?? '');
+                final balance = (item['balance'] as num?)?.toDouble() ?? 0;
+
+                return DataRow(
+                  cells: [
+                    DataCell(Text(date)),
+                    DataCell(Text(_tooltipCurrency.format(balance))),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
