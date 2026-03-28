@@ -11,6 +11,18 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
   );
 });
 
+class LoginResult {
+  final bool isSuccess;
+  final String? errorMessage;
+
+  const LoginResult._({required this.isSuccess, this.errorMessage});
+
+  const LoginResult.success() : this._(isSuccess: true);
+
+  const LoginResult.failure(String message)
+    : this._(isSuccess: false, errorMessage: message);
+}
+
 class AuthRepository {
   final Dio _dio;
   final FlutterSecureStorage _storage;
@@ -25,7 +37,9 @@ class AuthRepository {
 
   Future<bool> authenticateBiometrics() async {
     try {
-      final isAvailable = await _localAuth.canCheckBiometrics || await _localAuth.isDeviceSupported();
+      final isAvailable =
+          await _localAuth.canCheckBiometrics ||
+          await _localAuth.isDeviceSupported();
       if (!isAvailable) return false;
 
       final didAuthenticate = await _localAuth.authenticate(
@@ -37,27 +51,37 @@ class AuthRepository {
     }
   }
 
-  Future<bool> login(String password) async {
+  Future<LoginResult> login(String password) async {
     try {
       final response = await _dio.post(
         '/api/auth/login',
-        data: {
-          'username': 'admin',
-          'password': password,
-        },
-        options: Options(
-          contentType: Headers.formUrlEncodedContentType
-        )
+        data: {'username': 'admin', 'password': password},
+        options: Options(contentType: Headers.formUrlEncodedContentType),
       );
 
       if (response.statusCode == 200) {
         final token = response.data['access_token'];
         await _storage.write(key: 'jwt_token', value: token);
-        return true;
+        return const LoginResult.success();
       }
-      return false;
-    } catch (e) {
-      return false;
+      return const LoginResult.failure('Login failed. Check your password.');
+    } on DioException catch (error) {
+      final responseData = error.response?.data;
+      if (responseData is Map) {
+        final detail = responseData['detail'];
+        if (detail is String && detail.trim().isNotEmpty) {
+          return LoginResult.failure(detail.trim());
+        }
+      }
+      return LoginResult.failure(
+        error.response?.statusCode == 401
+            ? 'Login failed. Check your password.'
+            : 'Could not contact the server. Please try again.',
+      );
+    } catch (_) {
+      return const LoginResult.failure(
+        'Could not contact the server. Please try again.',
+      );
     }
   }
 

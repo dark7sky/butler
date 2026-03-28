@@ -24,16 +24,20 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Future<void> _login() async {
     setState(() => _isLoading = true);
     final repo = ref.read(authRepositoryProvider);
-    final success = await repo.login(_passwordController.text);
+    final result = await repo.login(_passwordController.text);
     setState(() => _isLoading = false);
 
-    if (success && mounted) {
+    if (result.isSuccess && mounted) {
       Navigator.of(
         context,
       ).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Login failed. Check your password.')),
+        SnackBar(
+          content: Text(
+            result.errorMessage ?? 'Login failed. Check your password.',
+          ),
+        ),
       );
     }
   }
