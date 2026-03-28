@@ -13,25 +13,55 @@ class LoginPage extends ConsumerStatefulWidget {
 
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _passwordController = TextEditingController();
+  final _serverController = TextEditingController();
   bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedServerAddress();
+  }
 
   @override
   void dispose() {
     _passwordController.dispose();
+    _serverController.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
-    setState(() => _isLoading = true);
+  Future<void> _loadSavedServerAddress() async {
     final repo = ref.read(authRepositoryProvider);
+    final savedAddress = await repo.getServerBaseUrlOverride();
+    if (!mounted || savedAddress == null) {
+      return;
+    }
+
+    _serverController.text = savedAddress;
+  }
+
+  Future<void> _login() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final repo = ref.read(authRepositoryProvider);
+
+    try {
+      await repo.setServerBaseUrlOverride(_serverController.text);
+    } on FormatException catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(error.message.toString())));
+      return;
+    }
+
+    setState(() => _isLoading = true);
     final result = await repo.login(_passwordController.text);
+    if (!mounted) {
+      return;
+    }
     setState(() => _isLoading = false);
 
-    if (result.isSuccess && mounted) {
+    if (result.isSuccess) {
       Navigator.of(
         context,
       ).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
-    } else if (mounted) {
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -121,6 +151,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 28),
+                    TextField(
+                      controller: _serverController,
+                      keyboardType: TextInputType.url,
+                      decoration: const InputDecoration(
+                        labelText: 'Server Address',
+                        hintText: '192.168.0.10:8921',
+                        helperText:
+                            'Optional. Leave blank to use the default server.',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.dns_outlined),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: _passwordController,
                       obscureText: true,

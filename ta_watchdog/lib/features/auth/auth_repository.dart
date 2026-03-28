@@ -51,6 +51,14 @@ class AuthRepository {
     }
   }
 
+  Future<String?> getServerBaseUrlOverride() async {
+    return readBaseUrlOverride(_storage);
+  }
+
+  Future<void> setServerBaseUrlOverride(String rawValue) async {
+    await writeBaseUrlOverride(_storage, rawValue);
+  }
+
   Future<LoginResult> login(String password) async {
     try {
       final response = await _dio.post(
