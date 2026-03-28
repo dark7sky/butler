@@ -33,6 +33,6 @@ Repository Secrets:
 
 The workflow decodes `KEYSTORE_BASE64` into `android/app/upload-keystore.jks` and generates `android/key.properties` during CI so the Android release build can use the upload key.
 
-If signing secrets are not set, CI still attempts to build using debug signing.
+If any Android signing secret is missing, the GitHub Actions build fails before the release APK build starts.
 
 Firebase distribution is skipped when Firebase vars/secrets are not fully set.
