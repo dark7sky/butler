@@ -383,6 +383,11 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           LineChartBarData(
             spots: points,
             isCurved: true,
+            curveSmoothness: 0.42,
+            preventCurveOverShooting: true,
+            preventCurveOvershootingThreshold: 24,
+            isStrokeCapRound: true,
+            isStrokeJoinRound: true,
             color: Colors.blueAccent,
             barWidth: 3,
             dotData: const FlDotData(show: false),
