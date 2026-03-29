@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../privacy/amount_masking.dart';
 import 'dashboard_provider.dart';
 
 class TrendPage extends ConsumerStatefulWidget {
@@ -40,6 +41,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isAmountMasked = ref.watch(amountMaskEnabledProvider);
     ref.listen<String>(trendChartTypeProvider, (previous, next) {
       if (previous == next) return;
       setState(() {
@@ -80,7 +82,10 @@ class _TrendPageState extends ConsumerState<TrendPage> {
             const SizedBox(height: 12),
             _buildChartSelector(),
             const SizedBox(height: 16),
-            _buildChartContainer(chartDataAsync),
+            _buildChartContainer(
+              chartDataAsync,
+              isAmountMasked: isAmountMasked,
+            ),
           ],
         ),
       ),
@@ -267,7 +272,10 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     }
   }
 
-  Widget _buildChartContainer(AsyncValue<List<dynamic>> chartDataAsync) {
+  Widget _buildChartContainer(
+    AsyncValue<List<dynamic>> chartDataAsync, {
+    required bool isAmountMasked,
+  }) {
     final titlePrefix = _showDiff ? 'Diff' : 'Total';
     return Card(
       elevation: 4,
@@ -285,7 +293,15 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               ),
             ),
             const SizedBox(height: 24),
-            chartDataAsync.when(
+            if (isAmountMasked)
+              const SizedBox(
+                height: 300,
+                child: Center(
+                  child: Text('가리기 활성화 중: 금액 차트가 숨겨졌습니다.'),
+                ),
+              )
+            else
+              chartDataAsync.when(
               data: (data) => _buildChartWithTable(data),
               loading: () => const SizedBox(
                 height: 400,

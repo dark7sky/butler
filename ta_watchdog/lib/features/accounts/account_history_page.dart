@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../dashboard/dashboard_provider.dart';
+import '../privacy/amount_masking.dart';
 
 class AccountHistoryPage extends ConsumerStatefulWidget {
   final String accountNumber;
@@ -35,6 +36,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isAmountMasked = ref.watch(amountMaskEnabledProvider);
     final accountsAsync = ref.watch(accountsProvider);
     final historyAsync = ref.watch(accountHistoryProvider(_request));
     final loadedHistory = historyAsync.asData?.value;
@@ -103,6 +105,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                   history,
                   displayHistory,
                   _findListTodayDiff(accountsAsync.value),
+                  isAmountMasked: isAmountMasked,
                 ),
                 const SizedBox(height: 12),
                 _buildControls(),
@@ -142,6 +145,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                       balance: balance,
                       diff: diff,
                       isSelected: isSelected,
+                      isAmountMasked: isAmountMasked,
                     );
                   },
                 ),
@@ -176,6 +180,7 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     List<dynamic> history,
     List<dynamic> displayHistory,
     double? listTodayDiff,
+    {required bool isAmountMasked}
   ) {
     final latest = displayHistory.first;
     final latestDate = _parseDate(latest['date']?.toString() ?? '');
@@ -184,7 +189,10 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     final deltaColor = (delta ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
     final deltaText = delta == null
         ? '--'
-        : '${delta >= 0 ? '+' : ''}${_currency.format(delta)}';
+        : maskAmountText(
+            '${delta >= 0 ? '+' : ''}${_currency.format(delta)}',
+            enabled: isAmountMasked,
+          );
     const deltaLabel = "Today's Change";
 
     return Card(
@@ -208,7 +216,10 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    _currency.format(latestBalance),
+                    maskAmountText(
+                      _currency.format(latestBalance),
+                      enabled: isAmountMasked,
+                    ),
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -277,11 +288,15 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
     required double balance,
     required double? diff,
     required bool isSelected,
+    required bool isAmountMasked,
   }) {
     final diffColor = (diff ?? 0) >= 0 ? Colors.teal : Colors.redAccent;
     final diffText = diff == null
         ? ''
-        : '${diff >= 0 ? '+' : ''}${_currency.format(diff)}';
+        : maskAmountText(
+            '${diff >= 0 ? '+' : ''}${_currency.format(diff)}',
+            enabled: isAmountMasked,
+          );
 
     return Material(
       color: isSelected ? Colors.blue.withOpacity(0.08) : Colors.transparent,
@@ -336,7 +351,10 @@ class _AccountHistoryPageState extends ConsumerState<AccountHistoryPage> {
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          _currency.format(balance),
+                          maskAmountText(
+                            _currency.format(balance),
+                            enabled: isAmountMasked,
+                          ),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 15,
