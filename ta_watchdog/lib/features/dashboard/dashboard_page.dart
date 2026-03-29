@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../privacy/amount_masking.dart';
 import 'dashboard_provider.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
@@ -22,6 +23,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     final summaryAsync = ref.watch(dashboardSummaryProvider);
+    final isAmountMasked = ref.watch(amountMaskEnabledProvider);
 
     return RefreshIndicator(
       onRefresh: () => ref.refresh(dashboardSummaryProvider.future),
@@ -34,7 +36,11 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               children: [
                 _buildSummaryCards(data),
                 const SizedBox(height: 24),
-                _buildTodayDetailSection(data['today_detail'], context),
+                _buildTodayDetailSection(
+                  data['today_detail'],
+                  context,
+                  isAmountMasked: isAmountMasked,
+                ),
               ],
             ),
             loading: () => const SizedBox(
@@ -54,6 +60,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget _buildTodayDetailSection(
     Map<String, dynamic> todayDetail,
     BuildContext context,
+    {required bool isAmountMasked}
   ) {
     final List<dynamic> accountsDiff = todayDetail['accounts_diff'] ?? [];
 
@@ -102,14 +109,22 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             physics: const NeverScrollableScrollPhysics(),
             itemCount: accountsDiff.length,
             itemBuilder: (context, index) =>
-                _buildDetailItem(accountsDiff[index], context),
+                _buildDetailItem(
+                  accountsDiff[index],
+                  context,
+                  isAmountMasked: isAmountMasked,
+                ),
             separatorBuilder: (context, index) => const SizedBox(height: 8),
           ),
       ],
     );
   }
 
-  Widget _buildDetailItem(Map<String, dynamic> item, BuildContext context) {
+  Widget _buildDetailItem(
+    Map<String, dynamic> item,
+    BuildContext context, {
+    required bool isAmountMasked,
+  }) {
     final diffValue = _asDouble(item['diff']);
     final isPositive = diffValue > 0;
 
@@ -198,7 +213,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
               )
             : null,
         trailing: Text(
-          '${isPositive ? '+' : ''}${_currency.format(diffValue)}',
+          maskAmountText(
+            '${isPositive ? '+' : ''}${_currency.format(diffValue)}',
+            enabled: isAmountMasked,
+          ),
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 15,
@@ -213,6 +231,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     final daily = data['summary_daily'];
     final monthly = data['summary_monthly'];
     final lastUpdate = _resolveLastUpdate(data);
+    final isAmountMasked = ref.watch(amountMaskEnabledProvider);
 
     return Column(
       children: [
@@ -221,7 +240,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           child: _buildMetricCard(
             title: 'Total Balance',
             value: _isBalanceVisible
-                ? _currency.format(daily['balance_now'])
+                ? maskAmountText(
+                    _currency.format(daily['balance_now']),
+                    enabled: isAmountMasked,
+                  )
                 : '********',
             subtitle: 'Last Update: $lastUpdate',
             icon: Icons.account_balance_wallet,
@@ -241,8 +263,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 onTap: () => _openTrend('day'),
                 child: _buildMetricCard(
                   title: "Today's Change",
-                  value:
-                      '${daily['diff_day'] > 0 ? '+' : ''}${_currency.format(daily['diff_day'])}',
+                  value: maskAmountText(
+                    '${daily['diff_day'] > 0 ? '+' : ''}${_currency.format(daily['diff_day'])}',
+                    enabled: isAmountMasked,
+                  ),
                   icon: Icons.today,
                   color: daily['diff_day'] >= 0
                       ? Colors.teal
@@ -256,8 +280,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                 onTap: () => _openTrend('month'),
                 child: _buildMetricCard(
                   title: "Month's Change",
-                  value:
-                      '${monthly['diff_this_month'] > 0 ? '+' : ''}${_currency.format(monthly['diff_this_month'])}',
+                  value: maskAmountText(
+                    '${monthly['diff_this_month'] > 0 ? '+' : ''}${_currency.format(monthly['diff_this_month'])}',
+                    enabled: isAmountMasked,
+                  ),
                   icon: Icons.calendar_month,
                   color: monthly['diff_this_month'] >= 0
                       ? Colors.teal

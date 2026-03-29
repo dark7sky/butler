@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/brand.dart';
+import '../auth/auth_repository.dart';
 import '../accounts/account_list_page.dart';
 import '../chat/chat_page.dart';
 import '../dashboard/dashboard_provider.dart';
 import '../dashboard/dashboard_page.dart';
 import '../dashboard/trend_page.dart';
 import '../manual_inputs/manual_inputs_page.dart';
+import '../privacy/amount_masking.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -64,6 +66,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   Widget build(BuildContext context) {
     final currentIndex = ref.watch(homeTabProvider);
+    final isMaskEnabled = ref.watch(amountMaskEnabledProvider);
 
     return WillPopScope(
       onWillPop: _onWillPop,
@@ -87,6 +90,47 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
           centerTitle: true,
           elevation: 0,
+          actions: [
+            TextButton.icon(
+              onPressed: () async {
+                final notifier = ref.read(amountMaskEnabledProvider.notifier);
+                if (!isMaskEnabled) {
+                  notifier.state = true;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('금액 가리기가 켜졌어요.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
+
+                final authRepo = ref.read(authRepositoryProvider);
+                final authenticated = await authRepo.authenticateBiometrics();
+                if (!mounted) return;
+
+                if (authenticated) {
+                  notifier.state = false;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('생체인증 완료. 금액 가리기를 해제했어요.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('생체인증에 실패했어요. 가리기를 유지합니다.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+              icon: Icon(isMaskEnabled ? Icons.lock : Icons.lock_open, size: 18),
+              label: const Text('가리기'),
+            ),
+            const SizedBox(width: 8),
+          ],
         ),
         body: _pages[currentIndex],
         bottomNavigationBar: NavigationBar(

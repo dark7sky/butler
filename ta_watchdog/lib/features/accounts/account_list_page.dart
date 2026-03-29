@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../dashboard/dashboard_provider.dart';
+import '../privacy/amount_masking.dart';
 import 'account_history_page.dart';
 
 class AccountListPage extends ConsumerStatefulWidget {
@@ -96,6 +97,7 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
   @override
   Widget build(BuildContext context) {
     final accountsAsync = ref.watch(accountsProvider);
+    final isAmountMasked = ref.watch(amountMaskEnabledProvider);
     final currency = NumberFormat.simpleCurrency(
       locale: 'ko_KR',
       decimalDigits: 0,
@@ -107,7 +109,10 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
           : value < 0
           ? '-'
           : '';
-      return '$sign${currency.format(value.abs())}';
+      return maskAmountText(
+        '$sign${currency.format(value.abs())}',
+        enabled: isAmountMasked,
+      );
     }
 
     return Scaffold(
@@ -314,7 +319,10 @@ class _AccountListPageState extends ConsumerState<AccountListPage> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        currency.format(_asDouble(acc['latest_balance'])),
+                        maskAmountText(
+                          currency.format(_asDouble(acc['latest_balance'])),
+                          enabled: isAmountMasked,
+                        ),
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'manual_inputs_provider.dart';
 import '../../models/manual_input.dart';
+import '../privacy/amount_masking.dart';
 
 class _GroupedIntegerInputFormatter extends TextInputFormatter {
   _GroupedIntegerInputFormatter()
@@ -280,6 +281,7 @@ class ManualInputsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isAmountMasked = ref.watch(amountMaskEnabledProvider);
     final inputsAsync = ref.watch(manualInputsProvider);
     final valueFormat = NumberFormat.decimalPattern('ko_KR');
 
@@ -392,7 +394,7 @@ class ManualInputsPage extends ConsumerWidget {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       subtitle: Text(
-                        'Value: ${valueFormat.format(input.value)}$updatedText',
+                        'Value: ${maskAmountText(valueFormat.format(input.value), enabled: isAmountMasked)}$updatedText',
                       ),
                       trailing: const Icon(
                         Icons.edit,
