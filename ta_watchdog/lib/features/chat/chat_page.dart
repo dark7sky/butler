@@ -4,6 +4,8 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../auth/auth_repository.dart';
+import '../auth/login_page.dart';
 import 'chat_provider.dart';
 
 class ChatPage extends ConsumerStatefulWidget {
@@ -16,6 +18,18 @@ class ChatPage extends ConsumerStatefulWidget {
 class _ChatPageState extends ConsumerState<ChatPage> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
+
+  Future<void> _logout() async {
+    final authRepo = ref.read(authRepositoryProvider);
+    await authRepo.logout();
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (route) => false,
+    );
+  }
 
   void _sendMessage() {
     final text = _textController.text.trim();
@@ -53,6 +67,19 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout, size: 18),
+                label: const Text('로그아웃'),
+              ),
+            ],
+          ),
+        ),
         Expanded(
           child: RefreshIndicator(
             onRefresh: () async {
