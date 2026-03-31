@@ -334,7 +334,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       return const Center(child: Text('No data'));
     }
 
-    final points = <FlSpot>[];
+    final bars = <BarChartGroupData>[];
     final labels = <int, String>{};
     double minY = double.infinity;
     double maxY = -double.infinity;
@@ -342,22 +342,39 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     for (var i = 0; i < rawData.length; i++) {
       final item = rawData[i] as Map<String, dynamic>;
       final y = (item['balance'] as num?)?.toDouble() ?? 0;
-      points.add(FlSpot(i.toDouble(), y));
+      bars.add(
+        BarChartGroupData(
+          x: i,
+          barRods: [
+            BarChartRodData(
+              toY: y,
+              width: 12,
+              color: Colors.blueAccent,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ],
+        ),
+      );
       minY = math.min(minY, y);
       maxY = math.max(maxY, y);
       labels[i] = _formatXAxisLabel(item['date']?.toString() ?? '');
     }
 
-    final padding = ((maxY - minY).abs() * 0.15).clamp(1000, double.infinity);
+    final hasNegativeValue = minY < 0;
+    final effectiveMinY = hasNegativeValue ? minY : 0.0;
+    final range = (maxY - effectiveMinY).abs();
+    final padding = (range * 0.08).clamp(500, double.infinity);
 
-    return LineChart(
-      LineChartData(
-        minY: minY - padding,
+    return BarChart(
+      BarChartData(
+        minY: effectiveMinY - (hasNegativeValue ? padding : 0),
         maxY: maxY + padding,
+        alignment: BarChartAlignment.spaceAround,
+        groupsSpace: 8,
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
-          horizontalInterval: _calculateInterval(minY, maxY),
+          horizontalInterval: _calculateInterval(effectiveMinY, maxY),
         ),
         titlesData: FlTitlesData(
           topTitles: const AxisTitles(
@@ -388,7 +405,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 56,
-              interval: _calculateInterval(minY, maxY),
+              interval: _calculateInterval(effectiveMinY, maxY),
               getTitlesWidget: (value, meta) => Text(
                 _compactCurrency.format(value),
                 style: const TextStyle(fontSize: 10, color: Colors.grey),
@@ -397,36 +414,19 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           ),
         ),
         borderData: FlBorderData(show: false),
-        lineTouchData: LineTouchData(
-          touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (spots) => spots.map((spot) {
-              final item = rawData[spot.x.toInt()] as Map<String, dynamic>;
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+              final item = rawData[group.x] as Map<String, dynamic>;
               final date = item['date']?.toString() ?? '';
-              return LineTooltipItem(
-                '${_formatTooltipDate(date)}\n${_tooltipCurrency.format(spot.y)}',
-                const TextStyle(color: Colors.white),
+              return BarTooltipItem(
+                '${_formatTooltipDate(date)}\n${_tooltipCurrency.format(rod.toY)}',
+                const TextStyle(color: Colors.white, fontSize: 12),
               );
-            }).toList(),
+            },
           ),
         ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: points,
-            isCurved: true,
-            curveSmoothness: 0.42,
-            preventCurveOverShooting: true,
-            preventCurveOvershootingThreshold: 24,
-            isStrokeCapRound: true,
-            isStrokeJoinRound: true,
-            color: Colors.blueAccent,
-            barWidth: 3,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: Colors.blueAccent.withValues(alpha: 0.12),
-            ),
-          ),
-        ],
+        barGroups: bars,
       ),
     );
   }
