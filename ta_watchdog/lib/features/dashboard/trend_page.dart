@@ -360,21 +360,22 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       labels[i] = _formatXAxisLabel(item['date']?.toString() ?? '');
     }
 
-    final hasNegativeValue = minY < 0;
-    final effectiveMinY = hasNegativeValue ? minY : 0.0;
-    final range = (maxY - effectiveMinY).abs();
-    final padding = (range * 0.08).clamp(500, double.infinity);
+    final range = (maxY - minY).abs();
+    final safeRange = range == 0 ? math.max(maxY.abs(), 1000) : range;
+    final padding = (safeRange * 0.15).clamp(1000, double.infinity);
+    final chartMinY = minY - padding;
+    final chartMaxY = maxY + padding;
 
     return BarChart(
       BarChartData(
-        minY: effectiveMinY - (hasNegativeValue ? padding : 0),
-        maxY: maxY + padding,
+        minY: chartMinY,
+        maxY: chartMaxY,
         alignment: BarChartAlignment.spaceAround,
         groupsSpace: 8,
         gridData: FlGridData(
           show: true,
           drawVerticalLine: false,
-          horizontalInterval: _calculateInterval(effectiveMinY, maxY),
+          horizontalInterval: _calculateInterval(chartMinY, chartMaxY),
         ),
         titlesData: FlTitlesData(
           topTitles: const AxisTitles(
@@ -405,7 +406,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
             sideTitles: SideTitles(
               showTitles: true,
               reservedSize: 56,
-              interval: _calculateInterval(effectiveMinY, maxY),
+              interval: _calculateInterval(chartMinY, chartMaxY),
               getTitlesWidget: (value, meta) => Text(
                 _compactCurrency.format(value),
                 style: const TextStyle(fontSize: 10, color: Colors.grey),
