@@ -334,6 +334,13 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       return const Center(child: Text('No data'));
     }
 
+    if (_showDiff) {
+      return _buildDiffBarChart(rawData);
+    }
+    return _buildPwcChart(rawData);
+  }
+
+  Widget _buildDiffBarChart(List<dynamic> rawData) {
     final bars = <BarChartGroupData>[];
     final labels = <int, String>{};
     double minY = double.infinity;
@@ -428,6 +435,113 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           ),
         ),
         barGroups: bars,
+      ),
+    );
+  }
+
+  Widget _buildPwcChart(List<dynamic> rawData) {
+    final spots = <FlSpot>[];
+    final labels = <int, String>{};
+    double minY = double.infinity;
+    double maxY = -double.infinity;
+
+    for (var i = 0; i < rawData.length; i++) {
+      final item = rawData[i] as Map<String, dynamic>;
+      final y = (item['balance'] as num?)?.toDouble() ?? 0;
+      spots.add(FlSpot(i.toDouble(), y));
+      minY = math.min(minY, y);
+      maxY = math.max(maxY, y);
+      labels[i] = _formatXAxisLabel(item['date']?.toString() ?? '');
+    }
+
+    final range = (maxY - minY).abs();
+    final safeRange = range == 0 ? math.max(maxY.abs(), 1000) : range;
+    final padding = (safeRange * 0.15).clamp(1000, double.infinity);
+    final chartMinY = minY - padding;
+    final chartMaxY = maxY + padding;
+
+    return LineChart(
+      LineChartData(
+        lineTouchData: LineTouchData(
+          handleBuiltInTouches: true,
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipItems: (touchedSpots) => touchedSpots.map((spot) {
+              final item = rawData[spot.spotIndex] as Map<String, dynamic>;
+              final date = item['date']?.toString() ?? '';
+              return LineTooltipItem(
+                '${_formatTooltipDate(date)}\n${_tooltipCurrency.format(spot.y)}',
+                const TextStyle(color: Colors.white, fontSize: 12),
+              );
+            }).toList(),
+          ),
+        ),
+        minY: chartMinY,
+        maxY: chartMaxY,
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: _calculateInterval(chartMinY, chartMaxY),
+        ),
+        titlesData: FlTitlesData(
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 28,
+              interval: _calculateBottomInterval(rawData.length),
+              getTitlesWidget: (value, meta) {
+                final label = labels[value.toInt()];
+                if (label == null) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    label,
+                    style: const TextStyle(fontSize: 10, color: Colors.grey),
+                  ),
+                );
+              },
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 56,
+              interval: _calculateInterval(chartMinY, chartMaxY),
+              getTitlesWidget: (value, meta) => Text(
+                _compactCurrency.format(value),
+                style: const TextStyle(fontSize: 10, color: Colors.grey),
+              ),
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            curveSmoothness: 0.25,
+            barWidth: 3,
+            color: Colors.blueAccent,
+            dotData: FlDotData(
+              show: rawData.length <= 60,
+              getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
+                radius: 2.6,
+                color: Colors.white,
+                strokeColor: Colors.blueAccent,
+                strokeWidth: 1.8,
+              ),
+            ),
+            belowBarData: BarAreaData(
+              show: true,
+              color: Colors.blueAccent.withValues(alpha: 0.15),
+            ),
+          ),
+        ],
       ),
     );
   }
