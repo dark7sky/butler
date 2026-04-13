@@ -17,6 +17,7 @@ jobs:
       FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
       FIREBASE_TESTERS: ${{ vars.FIREBASE_TESTERS }}
       API_BASE_URL: ${{ vars.API_BASE_URL }}
+      GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.workers.max=2 -Dkotlin.compiler.execution.strategy=in-process
 
     defaults:
       run:
