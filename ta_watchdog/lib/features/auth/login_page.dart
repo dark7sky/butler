@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/brand.dart';
 import 'auth_repository.dart';
-import '../home/home_page.dart';
+import 'auth_state.dart';
 
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
@@ -58,9 +58,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     setState(() => _isLoading = false);
 
     if (result.isSuccess) {
-      Navigator.of(
-        context,
-      ).pushReplacement(MaterialPageRoute(builder: (_) => const HomePage()));
+      ref.read(isAuthenticatedProvider.notifier).state = true;
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../features/auth/auth_state.dart';
 
 // Configuration for API Base URL
 const String _defaultProdBaseUrl = 'https://api.example.com';
@@ -120,6 +121,13 @@ final dioProvider = Provider<Dio>((ref) {
           options.headers['Authorization'] = 'Bearer $token';
         }
         return handler.next(options);
+      },
+      onError: (error, handler) async {
+        if (error.response?.statusCode == 401) {
+          await _secureStorage.delete(key: 'jwt_token');
+          ref.read(isAuthenticatedProvider.notifier).state = false;
+        }
+        return handler.next(error);
       },
     ),
   );
