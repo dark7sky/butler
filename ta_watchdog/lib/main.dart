@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/brand.dart';
 import 'core/app_theme.dart';
 import 'features/auth/auth_repository.dart';
+import 'features/auth/auth_state.dart';
 import 'features/auth/login_page.dart';
 import 'features/home/home_page.dart';
 
@@ -35,7 +36,6 @@ class AuthWrapper extends ConsumerStatefulWidget {
 
 class _AuthWrapperState extends ConsumerState<AuthWrapper> {
   bool _isLoading = true;
-  bool _isAuthenticated = false;
 
   @override
   void initState() {
@@ -45,15 +45,14 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
 
   Future<void> _checkAuth() async {
     final authRepo = ref.read(authRepositoryProvider);
+    ref.read(isAuthenticatedProvider.notifier).state = false;
     final hasToken = await authRepo.hasStoredToken();
 
     if (hasToken) {
       // Prompt Biometrics if they have a token
       final authSuccess = await authRepo.authenticateBiometrics();
       if (authSuccess) {
-        setState(() {
-          _isAuthenticated = true;
-        });
+        ref.read(isAuthenticatedProvider.notifier).state = true;
       }
       // If authSuccess is false, we just stay on _isAuthenticated = false
       // which will show the LoginPage. We DO NOT call logout() here
@@ -67,11 +66,13 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    final isAuthenticated = ref.watch(isAuthenticatedProvider);
+
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    if (_isAuthenticated) {
+    if (isAuthenticated) {
       return const HomePage();
     }
 
