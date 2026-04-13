@@ -52,7 +52,7 @@ jobs:
           if [ -n "${ANDROID_KEYSTORE_BASE64}" ] && [ -n "${ANDROID_KEYSTORE_PASSWORD}" ] && [ -n "${ANDROID_KEY_ALIAS}" ] && [ -n "${ANDROID_KEY_PASSWORD}" ]; then
             mkdir -p android/app
             printf "%s" "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > android/app/upload-keystore.jks
-            printf "storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=upload-keystore.jks\n" \
+            printf "storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=app/upload-keystore.jks\n" \
               "${ANDROID_KEYSTORE_PASSWORD}" "${ANDROID_KEY_PASSWORD}" "${ANDROID_KEY_ALIAS}" > android/key.properties
 
             keytool -list -keystore android/app/upload-keystore.jks -storepass "${ANDROID_KEYSTORE_PASSWORD}" -alias "${ANDROID_KEY_ALIAS}" >/dev/null
