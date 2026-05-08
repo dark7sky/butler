@@ -195,6 +195,10 @@ def _group_balance_rows(
         )
         if chart_type == "day":
             bucket = local_stamp.replace(minute=0, second=0, microsecond=0)
+        elif chart_type == "year":
+            bucket = local_stamp.replace(
+                day=1, hour=0, minute=0, second=0, microsecond=0
+            )
         else:
             bucket = local_stamp.replace(hour=0, minute=0, second=0, microsecond=0)
         grouped[bucket] = float(balance)
@@ -422,6 +426,7 @@ async def get_dashboard_chart_data(
     start_at: str | None = None,
     end_at: str | None = None,
     diff_mode: bool = False,
+    account_numbers: str | None = None,
     current_user: str = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -432,7 +437,11 @@ async def get_dashboard_chart_data(
         if start_local > end_local:
             start_local, end_local = end_local, start_local
 
-        if diff_mode and chart_type == "year":
+        selected_accounts = [
+            value.strip() for value in (account_numbers or "").split(",") if value.strip()
+        ]
+
+        if diff_mode and chart_type == "year" and not selected_accounts:
             rows = db.execute(
                 text(
                     """
@@ -454,23 +463,42 @@ async def get_dashboard_chart_data(
 
         start_utc = to_utc(start_local)
         end_utc = to_utc(end_local)
-        rows = db.execute(
-            text(
-                """
-                SELECT recorded_at, balance
-                FROM portfolio_balance_history
-                WHERE recorded_at BETWEEN :start_at AND :end_at
-                ORDER BY recorded_at ASC
-                """
-            ),
-            {
-                "start_at": start_utc,
-                "end_at": end_utc,
-            },
-        ).fetchall()
+        if selected_accounts:
+            rows = db.execute(
+                text(
+                    """
+                    SELECT recorded_at, SUM(balance) AS balance
+                    FROM account_balance_history
+                    WHERE recorded_at BETWEEN :start_at AND :end_at
+                      AND account_key = ANY(:account_keys)
+                    GROUP BY recorded_at
+                    ORDER BY recorded_at ASC
+                    """
+                ),
+                {
+                    "start_at": start_utc,
+                    "end_at": end_utc,
+                    "account_keys": selected_accounts,
+                },
+            ).fetchall()
+        else:
+            rows = db.execute(
+                text(
+                    """
+                    SELECT recorded_at, balance
+                    FROM portfolio_balance_history
+                    WHERE recorded_at BETWEEN :start_at AND :end_at
+                    ORDER BY recorded_at ASC
+                    """
+                ),
+                {
+                    "start_at": start_utc,
+                    "end_at": end_utc,
+                },
+            ).fetchall()
 
         if diff_mode:
-            if chart_type not in {"day", "month"}:
+            if chart_type not in {"day", "month", "year"}:
                 return {"status": "error", "message": "Invalid chart_type"}
             return {"status": "success", "data": _group_balance_rows(rows, chart_type)}
 
