@@ -20,6 +20,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
   late DateTime _endAt;
   late DateTime _startAt;
   late String _chartType;
+  List<String> _selectedAccountNumbers = const [];
 
   final _compactCurrency = NumberFormat.compactCurrency(
     locale: 'ko_KR',
@@ -58,6 +59,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           startAt: _startAt,
           endAt: _endAt,
           diffMode: _showDiff,
+          accountNumbers: _selectedAccountNumbers,
         ),
       ),
     );
@@ -71,6 +73,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               startAt: _startAt,
               endAt: _endAt,
               diffMode: _showDiff,
+              accountNumbers: _selectedAccountNumbers,
             ),
           ).future,
         ),
@@ -78,6 +81,8 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16.0),
           children: [
+            _buildAccountFilter(),
+            const SizedBox(height: 12),
             _buildDateTimeFilter(context),
             const SizedBox(height: 12),
             _buildChartSelector(),
@@ -132,6 +137,104 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                   }
                 });
               },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
+  Widget _buildAccountFilter() {
+    final accountsAsync = ref.watch(accountsProvider);
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Account', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+            const SizedBox(height: 8),
+            accountsAsync.when(
+              data: (accounts) {
+                final selectedCount = _selectedAccountNumbers.length;
+                final label = selectedCount == 0 ? 'Total' : '$selectedCount account${selectedCount == 1 ? '' : 's'} selected';
+                return PopupMenuButton<String>(
+                  tooltip: 'Select account',
+                  onSelected: (value) {
+                    if (value == '__total__') {
+                      setState(() => _selectedAccountNumbers = const []);
+                      return;
+                    }
+                    setState(() {
+                      final next = [..._selectedAccountNumbers];
+                      if (next.contains(value)) {
+                        next.remove(value);
+                      } else {
+                        next.add(value);
+                      }
+                      _selectedAccountNumbers = next;
+                    });
+                  },
+                  itemBuilder: (context) {
+                    final items = <PopupMenuEntry<String>>[
+                      CheckedPopupMenuItem<String>(
+                        value: '__total__',
+                        checked: _selectedAccountNumbers.isEmpty,
+                        child: const Text('Total'),
+                      ),
+                      const PopupMenuDivider(),
+                    ];
+                    items.addAll(accounts.map((account) {
+                      final map = account as Map<String, dynamic>;
+                      final accountNumber = map['account_number']?.toString() ?? '';
+                      final name = map['name']?.toString() ?? accountNumber;
+                      final company = map['company']?.toString() ?? '';
+                      final isChecked = _selectedAccountNumbers.contains(accountNumber);
+                      final subtitleParts = <String>[
+                        if (accountNumber.trim().isNotEmpty) accountNumber,
+                        if (company.trim().isNotEmpty) company,
+                      ];
+                      final subtitle = subtitleParts.join(' • ');
+                      return CheckedPopupMenuItem<String>(
+                        value: accountNumber,
+                        checked: isChecked,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(name),
+                            if (subtitle.isNotEmpty)
+                              Text(
+                                subtitle,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blueGrey,
+                                ),
+                              ),
+                          ],
+                        ),
+                      );
+                    }));
+                    return items;
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.blueGrey.shade100),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [Expanded(child: Text(label)), const Icon(Icons.arrow_drop_down)],
+                    ),
+                  ),
+                );
+              },
+              loading: () => const SizedBox(height: 42, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+              error: (err, stack) => Text('계좌를 불러오지 못했습니다: $err', style: const TextStyle(color: Colors.redAccent)),
             ),
           ],
         ),

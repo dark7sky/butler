@@ -61,12 +61,14 @@ class ChartRequest {
   final DateTime startAt;
   final DateTime endAt;
   final bool diffMode;
+  final List<String> accountNumbers;
 
   const ChartRequest({
     required this.chartType,
     required this.startAt,
     required this.endAt,
     required this.diffMode,
+    this.accountNumbers = const [],
   });
 
   @override
@@ -75,11 +77,27 @@ class ChartRequest {
         other.chartType == chartType &&
         other.startAt == startAt &&
         other.endAt == endAt &&
-        other.diffMode == diffMode;
+        other.diffMode == diffMode &&
+        _sameAccountNumbers(other.accountNumbers, accountNumbers);
   }
 
   @override
-  int get hashCode => Object.hash(chartType, startAt, endAt, diffMode);
+  int get hashCode => Object.hash(
+    chartType,
+    startAt,
+    endAt,
+    diffMode,
+    Object.hashAll(accountNumbers),
+  );
+
+  static bool _sameAccountNumbers(List<String> a, List<String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 }
 
 final chartDataProvider = FutureProvider.autoDispose
@@ -92,6 +110,8 @@ final chartDataProvider = FutureProvider.autoDispose
           'start_at': request.startAt.toIso8601String(),
           'end_at': request.endAt.toIso8601String(),
           'diff_mode': request.diffMode,
+          if (request.accountNumbers.isNotEmpty)
+            'account_numbers': request.accountNumbers.join(','),
         },
       );
 
