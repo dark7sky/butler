@@ -5,7 +5,7 @@ from typing import Any, Dict
 from pydantic import BaseModel
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from api.deps import get_current_user, get_db
@@ -464,17 +464,18 @@ async def get_dashboard_chart_data(
         start_utc = to_utc(start_local)
         end_utc = to_utc(end_local)
         if selected_accounts:
+            account_query = text(
+                """
+                SELECT recorded_at, SUM(balance) AS balance
+                FROM account_balance_history
+                WHERE recorded_at BETWEEN :start_at AND :end_at
+                  AND account_key IN :account_keys
+                GROUP BY recorded_at
+                ORDER BY recorded_at ASC
+                """
+            ).bindparams(bindparam("account_keys", expanding=True))
             rows = db.execute(
-                text(
-                    """
-                    SELECT recorded_at, SUM(balance) AS balance
-                    FROM account_balance_history
-                    WHERE recorded_at BETWEEN :start_at AND :end_at
-                      AND account_key = ANY(:account_keys)
-                    GROUP BY recorded_at
-                    ORDER BY recorded_at ASC
-                    """
-                ),
+                account_query,
                 {
                     "start_at": start_utc,
                     "end_at": end_utc,

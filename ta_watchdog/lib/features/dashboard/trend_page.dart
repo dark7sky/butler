@@ -193,11 +193,29 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                       final name = map['name']?.toString() ?? accountNumber;
                       final company = map['company']?.toString() ?? '';
                       final isChecked = _selectedAccountNumbers.contains(accountNumber);
-                      final title = company.trim().isEmpty ? name : '$name ($company)';
+                      final subtitleParts = <String>[
+                        if (accountNumber.trim().isNotEmpty) accountNumber,
+                        if (company.trim().isNotEmpty) company,
+                      ];
+                      final subtitle = subtitleParts.join(' • ');
                       return CheckedPopupMenuItem<String>(
                         value: accountNumber,
                         checked: isChecked,
-                        child: Text(title),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(name),
+                            if (subtitle.isNotEmpty)
+                              Text(
+                                subtitle,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blueGrey,
+                                ),
+                              ),
+                          ],
+                        ),
                       );
                     }));
                     return items;
