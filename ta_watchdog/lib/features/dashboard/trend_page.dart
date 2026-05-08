@@ -97,6 +97,391 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     );
   }
 
+  Widget _buildAccountFilter() {
+    final accountsAsync = ref.watch(accountsProvider);
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Account',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.blueGrey,
+              ),
+            ),
+            const SizedBox(height: 8),
+            accountsAsync.when(
+              data: (accounts) {
+                final accountMaps = accounts
+                    .map((account) => Map<String, dynamic>.from(account as Map))
+                    .toList();
+                final label = _buildAccountFilterLabel(accountMaps);
+                final helperText = _selectedAccountNumbers.isEmpty
+                    ? 'Show the total trend across all accounts.'
+                    : 'Search by account number, alias, bank, or broker.';
+
+                return InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _openAccountFilterSheet(accountMaps),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.blueGrey.shade100),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                label,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                helperText,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blueGrey.withValues(alpha: 0.8),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Icon(Icons.arrow_drop_down),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              loading: () => const SizedBox(
+                height: 42,
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+              error: (err, stack) => Text(
+                '계좌를 불러오지 못했습니다: $err',
+                style: const TextStyle(color: Colors.redAccent),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAccountFilterSheet(
+    List<Map<String, dynamic>> accounts,
+  ) async {
+    final queryController = TextEditingController();
+    var draftSelection = List<String>.from(_selectedAccountNumbers);
+    var searchQuery = '';
+
+    try {
+      final result = await showModalBottomSheet<List<String>>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setSheetState) {
+              final filteredAccounts = accounts
+                  .where((account) => _matchesAccountQuery(account, searchQuery))
+                  .toList()
+                ..sort((a, b) {
+                  final accountNumberA =
+                      a['account_number']?.toString().trim() ?? '';
+                  final accountNumberB =
+                      b['account_number']?.toString().trim() ?? '';
+                  final aSelected = draftSelection.contains(accountNumberA);
+                  final bSelected = draftSelection.contains(accountNumberB);
+                  if (aSelected != bSelected) {
+                    return aSelected ? -1 : 1;
+                  }
+
+                  final companyCompare = (a['company']?.toString() ?? '')
+                      .toLowerCase()
+                      .compareTo((b['company']?.toString() ?? '').toLowerCase());
+                  if (companyCompare != 0) return companyCompare;
+
+                  final nameCompare = _accountDisplayName(a)
+                      .toLowerCase()
+                      .compareTo(_accountDisplayName(b).toLowerCase());
+                  if (nameCompare != 0) return nameCompare;
+
+                  return accountNumberA.compareTo(accountNumberB);
+                });
+
+              void clearQuery() {
+                queryController.clear();
+                setSheetState(() => searchQuery = '');
+              }
+
+              void toggleAccount(String accountNumber) {
+                setSheetState(() {
+                  final next = [...draftSelection];
+                  if (next.contains(accountNumber)) {
+                    next.remove(accountNumber);
+                  } else {
+                    next.add(accountNumber);
+                  }
+                  draftSelection = next;
+                });
+              }
+
+              return SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    8,
+                    16,
+                    MediaQuery.of(context).viewInsets.bottom + 16,
+                  ),
+                  child: SizedBox(
+                    height: math.min(
+                      MediaQuery.of(context).size.height * 0.8,
+                      560,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Select accounts',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: queryController,
+                          autofocus: true,
+                          textInputAction: TextInputAction.search,
+                          decoration: InputDecoration(
+                            hintText:
+                                'Search account number, alias, bank, broker',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: searchQuery.isEmpty
+                                ? null
+                                : IconButton(
+                                    onPressed: clearQuery,
+                                    icon: const Icon(Icons.clear),
+                                  ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          onChanged: (value) {
+                            setSheetState(() => searchQuery = value);
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        CheckboxListTile(
+                          value: draftSelection.isEmpty,
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: const Text('Total'),
+                          subtitle: const Text(
+                            'Show the combined trend for all accounts.',
+                          ),
+                          onChanged: (checked) {
+                            if (checked != true) return;
+                            setSheetState(() => draftSelection = []);
+                          },
+                        ),
+                        const Divider(height: 16),
+                        Text(
+                          '${filteredAccounts.length} match${filteredAccounts.length == 1 ? '' : 'es'}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.blueGrey,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: filteredAccounts.isEmpty
+                              ? const Center(
+                                  child: Text(
+                                    'No matching accounts found.',
+                                    style: TextStyle(color: Colors.blueGrey),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  itemCount: filteredAccounts.length,
+                                  separatorBuilder: (context, index) =>
+                                      const Divider(height: 1),
+                                  itemBuilder: (context, index) {
+                                    final account = filteredAccounts[index];
+                                    final accountNumber =
+                                        account['account_number']
+                                            ?.toString()
+                                            .trim() ??
+                                        '';
+                                    final isChecked = draftSelection.contains(
+                                      accountNumber,
+                                    );
+
+                                    return CheckboxListTile(
+                                      value: isChecked,
+                                      contentPadding: EdgeInsets.zero,
+                                      controlAffinity:
+                                          ListTileControlAffinity.leading,
+                                      title: Text(_accountDisplayName(account)),
+                                      subtitle: Text(
+                                        _accountSubtitle(account),
+                                        style: TextStyle(
+                                          color: Colors.blueGrey.withValues(
+                                            alpha: 0.8,
+                                          ),
+                                        ),
+                                      ),
+                                      onChanged: accountNumber.isEmpty
+                                          ? null
+                                          : (_) => toggleAccount(accountNumber),
+                                    );
+                                  },
+                                ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                draftSelection.isEmpty
+                                    ? 'All accounts selected'
+                                    : '${draftSelection.length} account${draftSelection.length == 1 ? '' : 's'} selected',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton(
+                              onPressed: () {
+                                Navigator.of(context).pop(draftSelection);
+                              },
+                              child: const Text('Apply'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      );
+
+      if (!mounted || result == null) return;
+      setState(() {
+        _selectedAccountNumbers = result;
+      });
+    } finally {
+      queryController.dispose();
+    }
+  }
+
+  String _buildAccountFilterLabel(List<Map<String, dynamic>> accounts) {
+    if (_selectedAccountNumbers.isEmpty) {
+      return 'Total';
+    }
+
+    if (_selectedAccountNumbers.length == 1) {
+      for (final account in accounts) {
+        final accountNumber = account['account_number']?.toString().trim() ?? '';
+        if (accountNumber == _selectedAccountNumbers.first) {
+          return _accountDisplayName(account);
+        }
+      }
+    }
+
+    return '${_selectedAccountNumbers.length} accounts selected';
+  }
+
+  bool _matchesAccountQuery(
+    Map<String, dynamic> account,
+    String rawQuery,
+  ) {
+    final normalizedQuery = rawQuery.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) return true;
+
+    final values = [
+      account['account_number'],
+      account['name'],
+      account['memo'],
+      account['company'],
+      account['type'],
+    ].map((value) => value?.toString() ?? '').toList();
+
+    final plainHaystack = values.join(' ').toLowerCase();
+    final compactHaystack = _compactSearchText(values.join(''));
+    final compactQuery = _compactSearchText(normalizedQuery);
+
+    return plainHaystack.contains(normalizedQuery) ||
+        compactHaystack.contains(compactQuery);
+  }
+
+  String _compactSearchText(String value) {
+    return value.toLowerCase().replaceAll(RegExp(r'[\s-]+'), '');
+  }
+
+  String _accountDisplayName(Map<String, dynamic> account) {
+    final memo = account['memo']?.toString().trim() ?? '';
+    final name = account['name']?.toString().trim() ?? '';
+    final company = account['company']?.toString().trim() ?? '';
+    final accountNumber = account['account_number']?.toString().trim() ?? '';
+
+    if (memo.isNotEmpty) return memo;
+    if (name.isNotEmpty) return name;
+    if (company.isNotEmpty) return company;
+    return accountNumber.isNotEmpty ? accountNumber : 'Account';
+  }
+
+  String _accountSubtitle(Map<String, dynamic> account) {
+    final parts = <String>[
+      if ((account['name']?.toString().trim() ?? '').isNotEmpty &&
+          (account['memo']?.toString().trim() ?? '').isNotEmpty)
+        account['name']!.toString().trim(),
+      if ((account['account_number']?.toString().trim() ?? '').isNotEmpty)
+        account['account_number']!.toString().trim(),
+      if ((account['company']?.toString().trim() ?? '').isNotEmpty)
+        account['company']!.toString().trim(),
+      if ((account['type']?.toString().trim() ?? '').isNotEmpty)
+        account['type']!.toString().trim(),
+    ];
+
+    return parts.isEmpty ? 'No account details' : parts.join(' • ');
+  }
+
   Widget _buildDateTimeFilter(BuildContext context) {
     return Card(
       elevation: 2,
@@ -143,105 +528,6 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       ),
     );
   }
-
-
-  Widget _buildAccountFilter() {
-    final accountsAsync = ref.watch(accountsProvider);
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Account', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey)),
-            const SizedBox(height: 8),
-            accountsAsync.when(
-              data: (accounts) {
-                final selectedCount = _selectedAccountNumbers.length;
-                final label = selectedCount == 0 ? 'Total' : '$selectedCount account${selectedCount == 1 ? '' : 's'} selected';
-                return PopupMenuButton<String>(
-                  tooltip: 'Select account',
-                  onSelected: (value) {
-                    if (value == '__total__') {
-                      setState(() => _selectedAccountNumbers = const []);
-                      return;
-                    }
-                    setState(() {
-                      final next = [..._selectedAccountNumbers];
-                      if (next.contains(value)) {
-                        next.remove(value);
-                      } else {
-                        next.add(value);
-                      }
-                      _selectedAccountNumbers = next;
-                    });
-                  },
-                  itemBuilder: (context) {
-                    final items = <PopupMenuEntry<String>>[
-                      CheckedPopupMenuItem<String>(
-                        value: '__total__',
-                        checked: _selectedAccountNumbers.isEmpty,
-                        child: const Text('Total'),
-                      ),
-                      const PopupMenuDivider(),
-                    ];
-                    items.addAll(accounts.map((account) {
-                      final map = account as Map<String, dynamic>;
-                      final accountNumber = map['account_number']?.toString() ?? '';
-                      final name = map['name']?.toString() ?? accountNumber;
-                      final company = map['company']?.toString() ?? '';
-                      final isChecked = _selectedAccountNumbers.contains(accountNumber);
-                      final subtitleParts = <String>[
-                        if (accountNumber.trim().isNotEmpty) accountNumber,
-                        if (company.trim().isNotEmpty) company,
-                      ];
-                      final subtitle = subtitleParts.join(' • ');
-                      return CheckedPopupMenuItem<String>(
-                        value: accountNumber,
-                        checked: isChecked,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(name),
-                            if (subtitle.isNotEmpty)
-                              Text(
-                                subtitle,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blueGrey,
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
-                    }));
-                    return items;
-                  },
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.blueGrey.shade100),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [Expanded(child: Text(label)), const Icon(Icons.arrow_drop_down)],
-                    ),
-                  ),
-                );
-              },
-              loading: () => const SizedBox(height: 42, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
-              error: (err, stack) => Text('계좌를 불러오지 못했습니다: $err', style: const TextStyle(color: Colors.redAccent)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildDateTimeRow({
     required BuildContext context,
     required String label,
@@ -405,16 +691,16 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               )
             else
               chartDataAsync.when(
-              data: (data) => _buildChartWithTable(data),
-              loading: () => const SizedBox(
-                height: 400,
-                child: Center(child: CircularProgressIndicator()),
+                data: (data) => _buildChartWithTable(data),
+                loading: () => const SizedBox(
+                  height: 400,
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (err, stack) => SizedBox(
+                  height: 400,
+                  child: Center(child: Text('Error: $err')),
+                ),
               ),
-              error: (err, stack) => SizedBox(
-                height: 400,
-                child: Center(child: Text('Error: $err')),
-              ),
-            ),
           ],
         ),
       ),
