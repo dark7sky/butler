@@ -42,6 +42,17 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Resolve tester version metadata
+        run: |
+          APP_VERSION="$(grep '^version:' pubspec.yaml | head -n 1 | awk '{print $2}')"
+          APP_VERSION_NAME="${APP_VERSION%%+*}"
+          TESTER_VERSION_NAME="${APP_VERSION_NAME}-tester.${GITHUB_RUN_NUMBER}"
+
+          echo "APP_VERSION_NAME=${APP_VERSION_NAME}" >> "${GITHUB_ENV}"
+          echo "TESTER_VERSION_NAME=${TESTER_VERSION_NAME}" >> "${GITHUB_ENV}"
+
+          echo "Resolved tester versionName: ${TESTER_VERSION_NAME}"
+
       - name: Prepare Android signing files
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -66,6 +77,7 @@ jobs:
       - name: Build release APK
         run: |
           flutter build apk --release \
+            --build-name="${TESTER_VERSION_NAME}" \
             --build-number=${{ github.run_number }} \
             --dart-define=API_BASE_URL=${API_BASE_URL:-https://example.invalid} \
             --verbose
@@ -73,7 +85,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk-release-${{ github.run_number }}
+          name: android-apk-${{ env.TESTER_VERSION_NAME }}
           path: ta_watchdog/build/app/outputs/flutter-apk/app-release.apk
 
       - name: Distribute APK to Firebase App Distribution (optional)
@@ -88,7 +100,7 @@ jobs:
             firebase appdistribution:distribute build/app/outputs/flutter-apk/app-release.apk \
               --app "${FIREBASE_APP_ID}" \
               --testers "${FIREBASE_TESTERS}" \
-              --release-notes "GitHub Actions build #${GITHUB_RUN_NUMBER}"
+              --release-notes "versionName ${TESTER_VERSION_NAME} | build ${GITHUB_RUN_NUMBER} | ${GITHUB_SHA::7}"
           else
             echo "Firebase distribution vars/secrets not fully set. Skipping Firebase distribution."
           fi

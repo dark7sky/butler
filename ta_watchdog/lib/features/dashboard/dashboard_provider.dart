@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
+
 import '../../core/api_client.dart';
+import 'trend_account_filter.dart';
 
 class AccountHistoryRequest {
   final String accountNumber;
@@ -63,13 +65,13 @@ class ChartRequest {
   final bool diffMode;
   final List<String> accountNumbers;
 
-  const ChartRequest({
+  ChartRequest({
     required this.chartType,
     required this.startAt,
     required this.endAt,
     required this.diffMode,
-    this.accountNumbers = const [],
-  });
+    List<String> accountNumbers = const [],
+  }) : accountNumbers = normalizeTrendAccountNumbers(accountNumbers);
 
   @override
   bool operator ==(Object other) {
@@ -78,7 +80,7 @@ class ChartRequest {
         other.startAt == startAt &&
         other.endAt == endAt &&
         other.diffMode == diffMode &&
-        _sameAccountNumbers(other.accountNumbers, accountNumbers);
+        sameTrendAccountNumbers(other.accountNumbers, accountNumbers);
   }
 
   @override
@@ -89,15 +91,6 @@ class ChartRequest {
     diffMode,
     Object.hashAll(accountNumbers),
   );
-
-  static bool _sameAccountNumbers(List<String> a, List<String> b) {
-    if (identical(a, b)) return true;
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
 }
 
 final chartDataProvider = FutureProvider.autoDispose

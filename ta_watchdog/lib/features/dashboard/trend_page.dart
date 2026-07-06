@@ -4,9 +4,15 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../privacy/amount_masking.dart';
 import 'dashboard_provider.dart';
+import 'trend_account_filter.dart';
+
+const trendAccountFilterTriggerKey = Key('trend-account-filter-trigger');
+const trendAccountFilterSearchFieldKey = Key('trend-account-filter-search');
+const trendAccountFilterApplyButtonKey = Key('trend-account-filter-apply');
 
 class TrendPage extends ConsumerStatefulWidget {
   const TrendPage({super.key});
@@ -17,6 +23,7 @@ class TrendPage extends ConsumerStatefulWidget {
 
 class _TrendPageState extends ConsumerState<TrendPage> {
   bool _showDiff = false;
+  bool _didRestoreAccountFilter = false;
   late DateTime _endAt;
   late DateTime _startAt;
   late String _chartType;
@@ -38,6 +45,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     _chartType = ref.read(trendChartTypeProvider);
     _endAt = DateTime.now();
     _startAt = _endAt.subtract(const Duration(hours: 24));
+    _restoreAccountFilterSelection();
   }
 
   @override
@@ -52,31 +60,24 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       });
     });
 
-    final chartDataAsync = ref.watch(
-      chartDataProvider(
-        ChartRequest(
-          chartType: _chartType,
-          startAt: _startAt,
-          endAt: _endAt,
-          diffMode: _showDiff,
-          accountNumbers: _selectedAccountNumbers,
-        ),
-      ),
+    final chartRequest = ChartRequest(
+      chartType: _chartType,
+      startAt: _startAt,
+      endAt: _endAt,
+      diffMode: _showDiff,
+      accountNumbers: _selectedAccountNumbers,
     );
+    final chartDataAsync = _didRestoreAccountFilter
+        ? ref.watch(chartDataProvider(chartRequest))
+        : const AsyncLoading<List<dynamic>>();
 
     return Scaffold(
       body: RefreshIndicator(
-        onRefresh: () => ref.refresh(
-          chartDataProvider(
-            ChartRequest(
-              chartType: _chartType,
-              startAt: _startAt,
-              endAt: _endAt,
-              diffMode: _showDiff,
-              accountNumbers: _selectedAccountNumbers,
-            ),
-          ).future,
-        ),
+        onRefresh: () async {
+          if (!_didRestoreAccountFilter) return;
+          ref.invalidate(chartDataProvider(chartRequest));
+          await ref.read(chartDataProvider(chartRequest).future);
+        },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16.0),
@@ -108,7 +109,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Account',
+              '계좌',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Colors.blueGrey,
@@ -120,50 +121,61 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                 final accountMaps = accounts
                     .map((account) => Map<String, dynamic>.from(account as Map))
                     .toList();
+                final hasAccounts = accountMaps.isNotEmpty;
                 final label = _buildAccountFilterLabel(accountMaps);
-                final helperText = _selectedAccountNumbers.isEmpty
-                    ? 'Show the total trend across all accounts.'
-                    : 'Search by account number, alias, bank, or broker.';
+                final helperText = _buildAccountFilterHelperText(
+                  hasAccounts: hasAccounts,
+                );
 
-                return InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => _openAccountFilterSheet(accountMaps),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.blueGrey.shade100),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                label,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
+                return Semantics(
+                  button: hasAccounts,
+                  label: '계좌 필터 열기',
+                  child: InkWell(
+                    key: trendAccountFilterTriggerKey,
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: hasAccounts
+                        ? () => _openAccountFilterSheet(accountMaps)
+                        : null,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.blueGrey.shade100),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  label,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                helperText,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blueGrey.withValues(alpha: 0.8),
+                                const SizedBox(height: 2),
+                                Text(
+                                  helperText,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blueGrey.withValues(alpha: 0.8),
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Icon(Icons.arrow_drop_down),
-                      ],
+                          const SizedBox(width: 12),
+                          Icon(
+                            Icons.arrow_drop_down,
+                            color: hasAccounts ? null : Colors.grey,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -173,7 +185,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                 child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
               ),
               error: (err, stack) => Text(
-                '계좌를 불러오지 못했습니다: $err',
+                '계좌 목록을 불러오지 못했습니다: $err',
                 style: const TextStyle(color: Colors.redAccent),
               ),
             ),
@@ -190,296 +202,309 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     var draftSelection = List<String>.from(_selectedAccountNumbers);
     var searchQuery = '';
 
-    try {
-      final result = await showModalBottomSheet<List<String>>(
-        context: context,
-        isScrollControlled: true,
-        showDragHandle: true,
-        builder: (context) {
-          return StatefulBuilder(
-            builder: (context, setSheetState) {
-              final filteredAccounts = accounts
-                  .where((account) => _matchesAccountQuery(account, searchQuery))
-                  .toList()
-                ..sort((a, b) {
-                  final accountNumberA =
-                      a['account_number']?.toString().trim() ?? '';
-                  final accountNumberB =
-                      b['account_number']?.toString().trim() ?? '';
-                  final aSelected = draftSelection.contains(accountNumberA);
-                  final bSelected = draftSelection.contains(accountNumberB);
-                  if (aSelected != bSelected) {
-                    return aSelected ? -1 : 1;
-                  }
+    final result = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final filteredAccounts = accounts
+                .where((account) => trendAccountMatchesQuery(account, searchQuery))
+                .toList()
+              ..sort((a, b) {
+                final accountNumberA =
+                    a['account_number']?.toString().trim() ?? '';
+                final accountNumberB =
+                    b['account_number']?.toString().trim() ?? '';
+                final aSelected = draftSelection.contains(accountNumberA);
+                final bSelected = draftSelection.contains(accountNumberB);
 
-                  final companyCompare = (a['company']?.toString() ?? '')
-                      .toLowerCase()
-                      .compareTo((b['company']?.toString() ?? '').toLowerCase());
-                  if (companyCompare != 0) return companyCompare;
+                if (aSelected != bSelected) {
+                  return aSelected ? -1 : 1;
+                }
 
-                  final nameCompare = _accountDisplayName(a)
-                      .toLowerCase()
-                      .compareTo(_accountDisplayName(b).toLowerCase());
-                  if (nameCompare != 0) return nameCompare;
+                final companyCompare = (a['company']?.toString() ?? '')
+                    .toLowerCase()
+                    .compareTo((b['company']?.toString() ?? '').toLowerCase());
+                if (companyCompare != 0) return companyCompare;
 
-                  return accountNumberA.compareTo(accountNumberB);
-                });
+                final nameCompare = trendAccountDisplayName(a)
+                    .toLowerCase()
+                    .compareTo(trendAccountDisplayName(b).toLowerCase());
+                if (nameCompare != 0) return nameCompare;
 
-              void clearQuery() {
-                queryController.clear();
-                setSheetState(() => searchQuery = '');
-              }
+                return accountNumberA.compareTo(accountNumberB);
+              });
 
-              void toggleAccount(String accountNumber) {
-                setSheetState(() {
-                  final next = [...draftSelection];
-                  if (next.contains(accountNumber)) {
-                    next.remove(accountNumber);
-                  } else {
-                    next.add(accountNumber);
-                  }
-                  draftSelection = next;
-                });
-              }
+            void clearQuery() {
+              queryController.clear();
+              setSheetState(() => searchQuery = '');
+            }
 
-              return SafeArea(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    8,
-                    16,
-                    MediaQuery.of(context).viewInsets.bottom + 16,
-                  ),
-                  child: SizedBox(
-                    height: math.min(
-                      MediaQuery.of(context).size.height * 0.8,
-                      560,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Select accounts',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
+            void toggleAccount(String accountNumber) {
+              setSheetState(() {
+                final next = [...draftSelection];
+                if (next.contains(accountNumber)) {
+                  next.remove(accountNumber);
+                } else {
+                  next.add(accountNumber);
+                }
+                draftSelection = normalizeTrendAccountNumbers(next);
+              });
+            }
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  8,
+                  16,
+                  MediaQuery.of(context).viewInsets.bottom + 16,
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final sheetHeight = math.min(constraints.maxHeight, 560.0);
+
+                    return SizedBox(
+                      height: sheetHeight,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  '계좌 선택',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
+                              IconButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                icon: const Icon(Icons.close),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          TextField(
+                            key: trendAccountFilterSearchFieldKey,
+                            controller: queryController,
+                            autofocus: true,
+                            textInputAction: TextInputAction.search,
+                            decoration: InputDecoration(
+                              hintText: '계좌번호, 별명, 은행/증권사, 유형 검색',
+                              prefixIcon: const Icon(Icons.search),
+                              suffixIcon: searchQuery.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      onPressed: clearQuery,
+                                      icon: const Icon(Icons.clear),
+                                    ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
-                            IconButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              icon: const Icon(Icons.close),
+                            onChanged: (value) {
+                              setSheetState(() => searchQuery = value);
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          CheckboxListTile(
+                            value: draftSelection.isEmpty,
+                            contentPadding: EdgeInsets.zero,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            title: const Text('전체 계좌 합산'),
+                            subtitle: const Text(
+                              '계좌 필터 없이 전체 합계를 보여줍니다.',
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: queryController,
-                          autofocus: true,
-                          textInputAction: TextInputAction.search,
-                          decoration: InputDecoration(
-                            hintText:
-                                'Search account number, alias, bank, broker',
-                            prefixIcon: const Icon(Icons.search),
-                            suffixIcon: searchQuery.isEmpty
-                                ? null
-                                : IconButton(
-                                    onPressed: clearQuery,
-                                    icon: const Icon(Icons.clear),
-                                  ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                            onChanged: (checked) {
+                              if (checked != true) return;
+                              setSheetState(() => draftSelection = const []);
+                            },
+                          ),
+                          const Divider(height: 16),
+                          Text(
+                            '검색 결과 ${filteredAccounts.length}개',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.blueGrey,
                             ),
                           ),
-                          onChanged: (value) {
-                            setSheetState(() => searchQuery = value);
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        CheckboxListTile(
-                          value: draftSelection.isEmpty,
-                          contentPadding: EdgeInsets.zero,
-                          controlAffinity: ListTileControlAffinity.leading,
-                          title: const Text('Total'),
-                          subtitle: const Text(
-                            'Show the combined trend for all accounts.',
-                          ),
-                          onChanged: (checked) {
-                            if (checked != true) return;
-                            setSheetState(() => draftSelection = []);
-                          },
-                        ),
-                        const Divider(height: 16),
-                        Text(
-                          '${filteredAccounts.length} match${filteredAccounts.length == 1 ? '' : 'es'}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blueGrey,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Expanded(
-                          child: filteredAccounts.isEmpty
-                              ? const Center(
-                                  child: Text(
-                                    'No matching accounts found.',
-                                    style: TextStyle(color: Colors.blueGrey),
-                                  ),
-                                )
-                              : ListView.separated(
-                                  itemCount: filteredAccounts.length,
-                                  separatorBuilder: (context, index) =>
-                                      const Divider(height: 1),
-                                  itemBuilder: (context, index) {
-                                    final account = filteredAccounts[index];
-                                    final accountNumber =
-                                        account['account_number']
-                                            ?.toString()
-                                            .trim() ??
-                                        '';
-                                    final isChecked = draftSelection.contains(
-                                      accountNumber,
-                                    );
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: filteredAccounts.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      '검색 결과가 없습니다.',
+                                      style: TextStyle(color: Colors.blueGrey),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    itemCount: filteredAccounts.length,
+                                    separatorBuilder: (context, index) =>
+                                        const Divider(height: 1),
+                                    itemBuilder: (context, index) {
+                                      final account = filteredAccounts[index];
+                                      final accountNumber =
+                                          account['account_number']
+                                              ?.toString()
+                                              .trim() ??
+                                          '';
+                                      final isChecked = draftSelection.contains(
+                                        accountNumber,
+                                      );
 
-                                    return CheckboxListTile(
-                                      value: isChecked,
-                                      contentPadding: EdgeInsets.zero,
-                                      controlAffinity:
-                                          ListTileControlAffinity.leading,
-                                      title: Text(_accountDisplayName(account)),
-                                      subtitle: Text(
-                                        _accountSubtitle(account),
-                                        style: TextStyle(
-                                          color: Colors.blueGrey.withValues(
-                                            alpha: 0.8,
+                                      return CheckboxListTile(
+                                        value: isChecked,
+                                        contentPadding: EdgeInsets.zero,
+                                        controlAffinity:
+                                            ListTileControlAffinity.leading,
+                                        title: Text(
+                                          trendAccountDisplayName(account),
+                                        ),
+                                        subtitle: Text(
+                                          trendAccountSubtitle(account),
+                                          style: TextStyle(
+                                            color: Colors.blueGrey.withValues(
+                                              alpha: 0.8,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      onChanged: accountNumber.isEmpty
-                                          ? null
-                                          : (_) => toggleAccount(accountNumber),
-                                    );
-                                  },
-                                ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                draftSelection.isEmpty
-                                    ? 'All accounts selected'
-                                    : '${draftSelection.length} account${draftSelection.length == 1 ? '' : 's'} selected',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
+                                        onChanged: accountNumber.isEmpty
+                                            ? null
+                                            : (_) => toggleAccount(accountNumber),
+                                      );
+                                    },
+                                  ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  draftSelection.isEmpty
+                                      ? '필터 없음: 전체 계좌 합산'
+                                      : '${draftSelection.length}개 계좌 선택',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text('Cancel'),
-                            ),
-                            const SizedBox(width: 8),
-                            FilledButton(
-                              onPressed: () {
-                                Navigator.of(context).pop(draftSelection);
-                              },
-                              child: const Text('Apply'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                              TextButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text('취소'),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton(
+                                key: trendAccountFilterApplyButtonKey,
+                                onPressed: () {
+                                  Navigator.of(context).pop(draftSelection);
+                                },
+                                child: const Text('적용'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          );
-        },
-      );
+              ),
+            );
+          },
+        );
+      },
+    );
 
-      if (!mounted || result == null) return;
+    if (!mounted || result == null) return;
+    await _applySelectedAccountNumbers(result);
+  }
+
+  Future<void> _restoreAccountFilterSelection() async {
+    var restoredSelection = const <String>[];
+
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      restoredSelection = preferences.getStringList(
+            trendAccountFilterPreferenceKey,
+          ) ??
+          const <String>[];
+    } catch (error) {
+      debugPrint('Failed to restore Trend account filter: $error');
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _selectedAccountNumbers = normalizeTrendAccountNumbers(restoredSelection);
+      _didRestoreAccountFilter = true;
+    });
+  }
+
+  Future<void> _applySelectedAccountNumbers(List<String> accountNumbers) async {
+    final normalized = normalizeTrendAccountNumbers(accountNumbers);
+    final hasChanged = !sameTrendAccountNumbers(
+      _selectedAccountNumbers,
+      normalized,
+    );
+
+    if (hasChanged && mounted) {
       setState(() {
-        _selectedAccountNumbers = result;
+        _selectedAccountNumbers = normalized;
       });
-    } finally {
-      queryController.dispose();
+    }
+
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setStringList(
+        trendAccountFilterPreferenceKey,
+        normalized,
+      );
+    } catch (error) {
+      debugPrint('Failed to persist Trend account filter: $error');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text(
+              '계좌 필터를 저장하지 못했습니다. 이번 실행 동안만 적용됩니다.',
+            ),
+          ),
+        );
     }
   }
 
   String _buildAccountFilterLabel(List<Map<String, dynamic>> accounts) {
     if (_selectedAccountNumbers.isEmpty) {
-      return 'Total';
+      return '전체 계좌 합산';
     }
 
     if (_selectedAccountNumbers.length == 1) {
       for (final account in accounts) {
         final accountNumber = account['account_number']?.toString().trim() ?? '';
         if (accountNumber == _selectedAccountNumbers.first) {
-          return _accountDisplayName(account);
+          return trendAccountDisplayName(account);
         }
       }
     }
 
-    return '${_selectedAccountNumbers.length} accounts selected';
+    return '${_selectedAccountNumbers.length}개 계좌 선택';
   }
 
-  bool _matchesAccountQuery(
-    Map<String, dynamic> account,
-    String rawQuery,
-  ) {
-    final normalizedQuery = rawQuery.trim().toLowerCase();
-    if (normalizedQuery.isEmpty) return true;
+  String _buildAccountFilterHelperText({required bool hasAccounts}) {
+    if (!hasAccounts) {
+      return '선택 가능한 계좌가 없습니다.';
+    }
 
-    final values = [
-      account['account_number'],
-      account['name'],
-      account['memo'],
-      account['company'],
-      account['type'],
-    ].map((value) => value?.toString() ?? '').toList();
-
-    final plainHaystack = values.join(' ').toLowerCase();
-    final compactHaystack = _compactSearchText(values.join(''));
-    final compactQuery = _compactSearchText(normalizedQuery);
-
-    return plainHaystack.contains(normalizedQuery) ||
-        compactHaystack.contains(compactQuery);
-  }
-
-  String _compactSearchText(String value) {
-    return value.toLowerCase().replaceAll(RegExp(r'[\s-]+'), '');
-  }
-
-  String _accountDisplayName(Map<String, dynamic> account) {
-    final memo = account['memo']?.toString().trim() ?? '';
-    final name = account['name']?.toString().trim() ?? '';
-    final company = account['company']?.toString().trim() ?? '';
-    final accountNumber = account['account_number']?.toString().trim() ?? '';
-
-    if (memo.isNotEmpty) return memo;
-    if (name.isNotEmpty) return name;
-    if (company.isNotEmpty) return company;
-    return accountNumber.isNotEmpty ? accountNumber : 'Account';
-  }
-
-  String _accountSubtitle(Map<String, dynamic> account) {
-    final parts = <String>[
-      if ((account['name']?.toString().trim() ?? '').isNotEmpty &&
-          (account['memo']?.toString().trim() ?? '').isNotEmpty)
-        account['name']!.toString().trim(),
-      if ((account['account_number']?.toString().trim() ?? '').isNotEmpty)
-        account['account_number']!.toString().trim(),
-      if ((account['company']?.toString().trim() ?? '').isNotEmpty)
-        account['company']!.toString().trim(),
-      if ((account['type']?.toString().trim() ?? '').isNotEmpty)
-        account['type']!.toString().trim(),
-    ];
-
-    return parts.isEmpty ? 'No account details' : parts.join(' • ');
+    return _selectedAccountNumbers.isEmpty
+        ? '필터 없이 전체 계좌 합산 Trend를 보여줍니다.'
+        : '선택한 계좌만 Trend에 반영됩니다.';
   }
 
   Widget _buildDateTimeFilter(BuildContext context) {
@@ -492,7 +517,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Range',
+              '기간',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Colors.blueGrey,
@@ -501,7 +526,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
             const SizedBox(height: 10),
             _buildDateTimeRow(
               context: context,
-              label: 'Start',
+              label: '시작',
               value: _startAt,
               onChanged: (next) {
                 setState(() {
@@ -512,7 +537,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
             const SizedBox(height: 8),
             _buildDateTimeRow(
               context: context,
-              label: 'End',
+              label: '종료',
               value: _endAt,
               onChanged: (next) {
                 setState(() {
@@ -528,6 +553,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       ),
     );
   }
+
   Widget _buildDateTimeRow({
     required BuildContext context,
     required String label,
@@ -580,8 +606,8 @@ class _TrendPageState extends ConsumerState<TrendPage> {
 
   Widget _buildChartSelector() {
     final labels = _showDiff
-        ? const {'day': 'hours', 'month': 'days', 'year': 'months'}
-        : const {'day': 'day', 'month': 'month', 'year': 'year'};
+        ? const {'day': '시간', 'month': '일', 'year': '월'}
+        : const {'day': '일', 'month': '월', 'year': '년'};
 
     return Row(
       children: [
@@ -606,7 +632,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
         const SizedBox(width: 12),
         Row(
           children: [
-            const Text('Diff', style: TextStyle(color: Colors.blueGrey)),
+            const Text('증감', style: TextStyle(color: Colors.blueGrey)),
             Switch(
               value: _showDiff,
               onChanged: (value) {
@@ -665,7 +691,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
     AsyncValue<List<dynamic>> chartDataAsync, {
     required bool isAmountMasked,
   }) {
-    final titlePrefix = _showDiff ? 'Diff' : 'Total';
+    final titlePrefix = _showDiff ? '증감' : '합계';
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -675,7 +701,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '$titlePrefix Trend',
+              '$titlePrefix 추이',
               style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 color: Colors.blueGrey,
@@ -686,7 +712,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
               const SizedBox(
                 height: 300,
                 child: Center(
-                  child: Text('가리기 활성화 중: 금액 차트가 숨겨졌습니다.'),
+                  child: Text('금액 가리기가 활성화되어 차트를 숨겼습니다.'),
                 ),
               )
             else
@@ -698,7 +724,9 @@ class _TrendPageState extends ConsumerState<TrendPage> {
                 ),
                 error: (err, stack) => SizedBox(
                   height: 400,
-                  child: Center(child: Text('Error: $err')),
+                  child: Center(
+                    child: Text('차트 데이터를 불러오지 못했습니다: $err'),
+                  ),
                 ),
               ),
           ],
@@ -720,7 +748,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
 
   Widget _buildNativeChart(List<dynamic> rawData) {
     if (rawData.isEmpty) {
-      return const Center(child: Text('No data'));
+      return const Center(child: Text('데이터가 없습니다.'));
     }
 
     if (_showDiff) {
@@ -969,7 +997,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
         cells: [
           const DataCell(
             Text(
-              'Average',
+              '평균',
               style: TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
@@ -998,7 +1026,7 @@ class _TrendPageState extends ConsumerState<TrendPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Chart Data',
+          '차트 데이터',
           style: TextStyle(
             fontWeight: FontWeight.w600,
             color: Colors.blueGrey,
@@ -1011,11 +1039,8 @@ class _TrendPageState extends ConsumerState<TrendPage> {
             scrollDirection: Axis.horizontal,
             child: DataTable(
               columns: const [
-                DataColumn(label: Text('Date')),
-                DataColumn(
-                  label: Text('Balance'),
-                  numeric: true,
-                ),
+                DataColumn(label: Text('일시')),
+                DataColumn(label: Text('잔액'), numeric: true),
               ],
               rows: tableRows,
             ),
